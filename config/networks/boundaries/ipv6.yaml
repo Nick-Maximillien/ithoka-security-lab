@@ -1,5 +1,7 @@
+
 version: 1
 boundary: ipv6
+
 settings:
   enabled: true
   mode: deny
@@ -7,7 +9,13 @@ settings:
   scope: investigation-bridge
   rules: []
   exceptions: []
-  verification: [ip6tables]
+  verification:
+    - ip6tables
+    - runtime_acceptance
   adapter: linux-wsl
-  description: IPv6 traffic boundary
-  reason: IPv6 is independently configurable from IPv4
+  description: >-
+    Controls IPv6 traffic entering and leaving the investigation bridge,
+    independently of IPv4 policy.
+  reason: >-
+    IPv6 is independently configurable from IPv4. Traffic across the
+    investigation bridge must remain denied unless explicitly authorized.

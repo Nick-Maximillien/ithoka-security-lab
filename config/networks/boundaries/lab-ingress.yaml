@@ -1,5 +1,7 @@
+
 version: 1
 boundary: lab_ingress
+
 settings:
   enabled: true
   mode: deny
@@ -7,7 +9,14 @@ settings:
   scope: investigation-network
   rules: []
   exceptions: []
-  verification: [iptables, ip6tables]
+  verification:
+    - iptables
+    - ip6tables
+    - runtime_acceptance
   adapter: linux-wsl
-  description: Inbound traffic entering the investigation network
-  reason: Prevent unsolicited access to research services
+  description: >-
+    Controls inbound traffic entering the investigation network over IPv4
+    and IPv6, including unsolicited connections to research services.
+  reason: >-
+    Prevent unsolicited access to research services. Inbound traffic
+    remains denied unless explicitly authorized by validated rules or exceptions.

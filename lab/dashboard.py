@@ -17,7 +17,14 @@ from .construction import (
     write_plan,
 )
 from .evidence import archive_evidence
-from .foundation import CAPABILITIES_FILE, LabError, ROOT, ensure_inside, load_catalog
+from .foundation import (
+    CAPABILITIES_FILE,
+    LabError,
+    ROOT,
+    ensure_inside,
+    load_catalog,
+    load_materials,
+)
 from .workspace import (
     collect_evidence,
     destroy_experiment,
@@ -36,6 +43,7 @@ def lab_overview(root: Path = ROOT) -> dict[str, Any]:
         "configuration": "investigation-independent",
         "backend": "docker.compose",
         "capabilities": sorted(load_catalog(CAPABILITIES_FILE, "capabilities")),
+        "materials": sorted(load_materials(root)),
         "preflight_recorded": preflight.is_file(),
         "preflight_inventory": preflight.read_text(encoding="utf-8") if preflight.is_file() else None,
     }

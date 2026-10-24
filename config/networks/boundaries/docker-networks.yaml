@@ -1,5 +1,7 @@
+
 version: 1
 boundary: docker_networks
+
 settings:
   enabled: true
   mode: deny
@@ -7,7 +9,13 @@ settings:
   scope: other-docker-networks
   rules: []
   exceptions: []
-  verification: [network_inspection]
+  verification:
+    - network_inspection
+    - runtime_acceptance
   adapter: docker-compose
-  description: Investigation, host, and unrelated Docker network topology
-  reason: Cross-project communication must be explicitly controlled
+  description: >-
+    Controls communication between the investigation environment,
+    the host network, and unrelated Docker networks.
+  reason: >-
+    Cross-project and host communication must be explicitly authorized;
+    network separation must be verified against the effective runtime topology.

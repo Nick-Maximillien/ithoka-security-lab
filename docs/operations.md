@@ -37,20 +37,22 @@ Before construction, use the network workflow:
 python3 lab/lab.py networks discover
 python3 lab/lab.py networks configure
 python3 lab/lab.py networks validate-config
+sudo -v
+python3 lab/lab.py networks preflight
 python3 lab/lab.py networks plan --profile isolated \
   --output state/network-plans/isolated.json
 ```
 
-Discovery, configuration validation, and plan generation are read-only. Apply
-and verify require explicit authorization and operate only on an owned project
-network:
-
-```bash
-python3 lab/lab.py networks apply sec-lab-i-local-study-01 \
-  --profile isolated --authorize "reviewed boundary plan"
-python3 lab/lab.py networks verify sec-lab-i-local-study-01 \
-  --profile isolated
-```
+Discovery, validation, preflight, and plan generation do not create networks
+or apply firewall rules. The plan reports policy support; the currently
+supplied profiles require unsupported Windows-host, DNS, proxy, and external
+runtime-acceptance controls and therefore cannot be used to construct workloads
+while those boundaries remain required. An unsupported plan is saved for
+inspection but returns a failing command status; do not proceed based on a
+generated plan alone.
+Project `networks apply` and `verify` require the already-created, owned
+experiment network. Construction owns the required ordering and will not
+start services unless boundary application and verification succeed.
 
 Experiments must be admitted with explicit resource reservations before
 runtime-owned shared capacity is allocated. Admission pins the selected

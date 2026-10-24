@@ -1,12 +1,17 @@
+
+schema_version: 1
+
 maintenance:
   network_access: explicit-operator-action-only
   experiment_egress: disabled
+
   required_records:
     - dependency_reference
     - source_or_registry
     - digest_or_build_input
     - acquisition_utc
     - verification_result
+
   closure_checks:
     - isolated-compose-validation
     - external-network-attachments

@@ -1,3 +1,4 @@
+
 # Conservative lab admission ceilings, not a measurement of host capacity.
 # Reassess only after recording the actual WSL/Windows idle baseline.
 max_active_instances: 1

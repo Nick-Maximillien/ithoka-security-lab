@@ -4,10 +4,10 @@ The active profile is the single line in `active-profile`. The twelve
 authoritative, researcher-editable boundary files are under `boundaries/`.
 Profiles under `profiles/` select those files and contain only explicit
 profile overrides; they are not a second boundary source. Selecting a profile
-never requires editing Python or shell source. Use `isolated` for ordinary
-experiments.
+never requires editing Python or shell source. The profile name does not assert that the current adapter supports every
+enabled boundary.
 
-The canonical profiles are exactly:
+The canonical profile names are exactly:
 
 - `isolated`: deny unnecessary ingress, egress, host, DNS, proxy, and protocol
   paths.
@@ -38,17 +38,31 @@ Review machine-specific values before generating a plan:
 
 ```bash
 python3 lab/lab.py networks discover
-cp config/networks/machine.yaml.example config/networks/machine.yaml
-# edit operator_confirmed.approved_docker_context and approved scopes
+# run `networks configure` only if machine.yaml is missing
+# review/edit the existing operator_confirmed values
 python3 lab/lab.py networks validate-config
+sudo -v
+python3 lab/lab.py networks preflight
 python3 lab/lab.py networks plan --profile isolated \
   --output state/network-plans/isolated.json
 ```
 
-`machine.yaml` is intentionally not committed: Docker context, interfaces and
-network identities are host-specific. Discovery and validation are read-only.
-The plan is also read-only; only `networks apply` with an explicit operator
-authorization invokes the scoped Linux adapter.
+`machine.yaml` is host-specific: Docker context, interfaces and network
+identities must be confirmed for the current machine. Discovery and validation are read-only.
+Preflight verifies the context, default Docker networks, firewall backends,
+and privileged read access to firewall rules without changing them. The plan
+is read-only and its `supported` field is a policy capability result, not
+proof of applied enforcement. The supplied profiles currently require
+Windows-host, DNS, and proxy capabilities that are not implemented. The
+external-network policy also requires runtime acceptance, which the adapter
+does not perform. Therefore the supplied profiles report `supported: false`;
+construction fails before creating Compose resources while those requirements
+remain enabled.
+
+`networks apply` is project-specific and requires an existing, uniquely
+identified Compose network whose ownership labels match the investigation.
+It does not belong to machine setup and does not create a network. Construction
+creates that network, applies and verifies its boundary, then starts services.
 
 Inspect the effective configuration with:
 

@@ -18,6 +18,8 @@
 - Read-only WSL/Docker network discovery and operator-confirmed machine
   configuration validation.
 - Inspectable enforcement plans and explicit Linux/WSL capability rejection.
+- Project-owned IPv4/IPv6 bridge chains with leading host/forwarding jumps,
+  idempotent installation, ordering verification, and scoped removal.
 - Persistent runtime admission with pinned policy identity, resource
   reservations, shared-scope conflict detection, and inter-process state
   locking.
@@ -31,8 +33,11 @@
 - Workload observations and evidence preservation through disposal.
 - Durable archive transfer and Windows emergency-stop behavior.
 
-The current adapter genuinely supports only project-scoped deny-mode IPv4/IPv6
-bridge enforcement. Restricted allow-lists, monitor-mode enforcement,
-Windows-host controls, upstream VPN/routing controls, and temporary maintenance
-restoration remain unsupported and fail closed. Passing repository tests
-establishes code behavior only; it does not establish Docker or WSL isolation.
+The adapter's project-owned IPv4/IPv6 chains are structurally verified, but no
+live packet acceptance runner is available, so they are not proof of effective
+isolation. Restricted allow-lists, monitor-mode enforcement, Windows-host
+controls, dedicated DNS/proxy enforcement, upstream VPN/routing controls, and
+temporary maintenance restoration remain unsupported and fail closed.
+`runtime start` refuses readiness without project-specific verified rules and
+passing acceptance evidence. Passing repository tests establishes code
+behavior only; it does not establish Docker or WSL isolation.

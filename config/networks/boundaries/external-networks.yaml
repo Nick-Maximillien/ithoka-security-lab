@@ -1,5 +1,7 @@
+
 version: 1
 boundary: external_networks
+
 settings:
   enabled: true
   mode: deny
@@ -7,7 +9,13 @@ settings:
   scope: lan-internet-vpn
   rules: []
   exceptions: []
-  verification: [forwarding_rules, runtime_acceptance]
+  verification:
+    - forwarding_rules
+    - runtime_acceptance
   adapter: linux-wsl
-  description: LAN, gateway, upstream, VPN, and Internet destinations
-  reason: External paths require explicit rules and approval
+  description: >-
+    Controls outbound access to LAN devices, gateways, upstream networks,
+    VPN paths, and Internet destinations.
+  reason: >-
+    External network paths remain denied unless explicitly defined,
+    validated, and approved through boundary rules or exceptions.

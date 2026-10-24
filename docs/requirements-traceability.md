@@ -13,8 +13,9 @@
 | Host/daemon readiness | `scripts/preflight.sh` | WSL/Docker host check passed; runtime untested |
 | Network discovery | `lab.py networks discover` | Read-only command and unit coverage |
 | Machine-specific network configuration | `config/networks/machine.yaml` | Schema validation; operator confirmation required |
-| Enforcement planning | `lab.py networks plan` | Resolved policy, scopes, adapters, and capability result |
-| Boundary apply/verify | `lab.py networks apply/verify` and `scripts/network-boundary.sh` | Scoped implementation; live Docker/firewall acceptance pending |
+| Machine enforcement prerequisites | `lab.py networks preflight` | Read-only context, default-network, firewall backend, and privileged-rule-read checks |
+| Enforcement planning | `lab.py networks plan` and construction plan | Capability status is explicit; unsupported boundaries fail closed |
+| Boundary apply/verify | Construction lifecycle and `scripts/network-boundary.sh` | Project-owned interface rules; live Docker/firewall acceptance pending |
 | Runtime admission | `lab/runtime.py` | Policy pinning, resource reservations, shared-scope conflicts, locking |
 | Strong isolation claim | Explicitly not claimed | WSL/Docker limitations documented |
 

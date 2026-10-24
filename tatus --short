@@ -1,0 +1,1243 @@
+README.md:51: trailing whitespace.
+[32m+[m[32m# Run `networks configure` only if machine.yaml is missing; otherwise review it.[m[41m[m
+README.md:53: trailing whitespace.
+[32m+[m[32msudo -v[m[41m[m
+README.md:54: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks preflight[m[41m[m
+README.md:62: trailing whitespace.
+[32m+[m[32mThe preflight is a read-only check of the approved Docker context, default[m[41m[m
+README.md:63: trailing whitespace.
+[32m+[m[32mnetwork inventory, firewall command backends, and root-readable IPv4/IPv6[m[41m[m
+README.md:64: trailing whitespace.
+[32m+[m[32mrules. It does not install rules or alter any Docker resource. The network plan[m[41m[m
+README.md:65: trailing whitespace.
+[32m+[m[32mis read-only and reports whether the selected policy is supported. It is not[m[41m[m
+README.md:66: trailing whitespace.
+[32m+[m[32mproof of live enforcement. A project-owned Docker network does not exist until[m[41m[m
+README.md:67: trailing whitespace.
+[32m+[m[32mits investigation is constructed from a researcher-supplied specification.[m[41m[m
+README.md:68: trailing whitespace.
+[32m+[m[32m`networks apply` requires that existing owned network and never creates it.[m[41m[m
+README.md:69: trailing whitespace.
+[32m+[m[32mConstruction creates the Compose network, applies and verifies the boundary,[m[41m[m
+README.md:70: trailing whitespace.
+[32m+[m[32mand only then starts workloads.[m[41m[m
+README.md:71: trailing whitespace.
+[32m+[m[41m[m
+README.md:72: trailing whitespace.
+[32m+[m[32mThe current supplied profiles report `supported: false` because they require[m[41m[m
+README.md:73: trailing whitespace.
+[32m+[m[32mWindows-host, DNS, proxy, and external runtime-acceptance controls that are not[m[41m[m
+README.md:74: trailing whitespace.
+[32m+[m[32mimplemented. Do not proceed to construction unless the reviewed investigation[m[41m[m
+README.md:75: trailing whitespace.
+[32m+[m[32mpolicy only requests capabilities the plan reports as supported. Disabling a[m[41m[m
+README.md:76: trailing whitespace.
+[32m+[m[32mboundary is an explicit reduction in protection, not a claim that the adapter[m[41m[m
+README.md:77: trailing whitespace.
+[32m+[m[32menforces it.[m[41m[m
+README.md:80: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py validate-investigation path/to/investigation.yaml[m[41m[m
+README.md:81: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py plan path/to/investigation.yaml \[m[41m[m
+README.md:82: trailing whitespace.
+[32m+[m[32m  --investigation-id local-study-01 \[m[41m[m
+README.md:83: trailing whitespace.
+[32m+[m[32m  --output state/plans/local-study-01.json[m[41m[m
+README.md:84: trailing whitespace.
+[32m+[m[32m# Continue only if the plan reports network_policy_supported: true.[m[41m[m
+README.md:85: trailing whitespace.
+[32m+[m[32mexport REQUIRE_RUNTIME_APPROVAL=true[m[41m[m
+README.md:86: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py construct-investigation path/to/investigation.yaml \[m[41m[m
+README.md:87: trailing whitespace.
+[32m+[m[32m  --investigation-id local-study-01 \[m[41m[m
+README.md:88: trailing whitespace.
+[32m+[m[32m  --authorize "approved local construction after plan review"[m[41m[m
+README.md:89: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks verify sec-lab-i-local-study-01 --profile isolated[m[41m[m
+README.md:90: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks test sec-lab-i-local-study-01 --profile isolated \[m[41m[m
+README.md:94: trailing whitespace.
+[32m+[m[32mSet `REQUIRE_RUNTIME_APPROVAL=true` in `config/lab.env` as well as the current[m[41m[m
+README.md:95: trailing whitespace.
+[32m+[m[32mshell before construction. The specification's selected network profile must[m[41m[m
+README.md:96: trailing whitespace.
+[32m+[m[32mmatch the profile used for later verification. Review the construction plan's[m[41m[m
+README.md:97: trailing whitespace.
+[32m+[m[32m`network_policy_supported` field before proceeding. The currently supplied[m[41m[m
+README.md:98: trailing whitespace.
+[32m+[m[32mprofiles enable Windows-host, DNS, and proxy boundaries that the adapter[m[41m[m
+README.md:99: trailing whitespace.
+[32m+[m[32mcannot enforce as distinct controls and require external runtime acceptance[m[41m[m
+README.md:100: trailing whitespace.
+[32m+[m[32mthat the adapter does not perform; the plan reports them as unsupported and[m[41m[m
+README.md:101: trailing whitespace.
+[32m+[m[32mconstruction fails closed while they remain required. Do not[m[41m[m
+README.md:102: trailing whitespace.
+[32m+[m[32mdisable them unless the experiment explicitly does not require those guarantees;[m[41m[m
+README.md:103: trailing whitespace.
+[32m+[m[32mdoing so does not provide Windows-host, DNS, or proxy isolation. The adapter[m[41m[m
+README.md:104: trailing whitespace.
+[32m+[m[32mdoes not control Windows Firewall, routes, unrelated networks, or global[m[41m[m
+README.md:105: trailing whitespace.
+[32m+[m[32mfirewall tables.[m[41m[m
+README.md:109: trailing whitespace.
+[32m+[m[32mupstream VPN/routing controls, capture, and temporary maintenance access are[m[41m[m
+README.md:110: trailing whitespace.
+[32m+[m[32mnot implemented as verified capabilities and fail closed when required.[m[41m[m
+config/networks/README.md:7: trailing whitespace.
+[32m+[m[32mnever requires editing Python or shell source. The profile name does not assert that the current adapter supports every[m[41m[m
+config/networks/README.md:8: trailing whitespace.
+[32m+[m[32menabled boundary.[m[41m[m
+config/networks/README.md:10: trailing whitespace.
+[32m+[m[32mThe canonical profile names are exactly:[m[41m[m
+config/networks/README.md:41: trailing whitespace.
+[32m+[m[32m# run `networks configure` only if machine.yaml is missing[m[41m[m
+config/networks/README.md:42: trailing whitespace.
+[32m+[m[32m# review/edit the existing operator_confirmed values[m[41m[m
+config/networks/README.md:44: trailing whitespace.
+[32m+[m[32msudo -v[m[41m[m
+config/networks/README.md:45: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks preflight[m[41m[m
+config/networks/README.md:50: trailing whitespace.
+[32m+[m[32m`machine.yaml` is host-specific: Docker context, interfaces and network[m[41m[m
+config/networks/README.md:51: trailing whitespace.
+[32m+[m[32midentities must be confirmed for the current machine. Discovery and validation are read-only.[m[41m[m
+config/networks/README.md:52: trailing whitespace.
+[32m+[m[32mPreflight verifies the context, default Docker networks, firewall backends,[m[41m[m
+config/networks/README.md:53: trailing whitespace.
+[32m+[m[32mand privileged read access to firewall rules without changing them. The plan[m[41m[m
+config/networks/README.md:54: trailing whitespace.
+[32m+[m[32mis read-only and its `supported` field is a policy capability result, not[m[41m[m
+config/networks/README.md:55: trailing whitespace.
+[32m+[m[32mproof of applied enforcement. The supplied profiles currently require[m[41m[m
+config/networks/README.md:56: trailing whitespace.
+[32m+[m[32mWindows-host, DNS, and proxy capabilities that are not implemented. The[m[41m[m
+config/networks/README.md:57: trailing whitespace.
+[32m+[m[32mexternal-network policy also requires runtime acceptance, which the adapter[m[41m[m
+config/networks/README.md:58: trailing whitespace.
+[32m+[m[32mdoes not perform. Therefore the supplied profiles report `supported: false`;[m[41m[m
+config/networks/README.md:59: trailing whitespace.
+[32m+[m[32mconstruction fails before creating Compose resources while those requirements[m[41m[m
+config/networks/README.md:60: trailing whitespace.
+[32m+[m[32mremain enabled.[m[41m[m
+config/networks/README.md:61: trailing whitespace.
+[32m+[m[41m[m
+config/networks/README.md:62: trailing whitespace.
+[32m+[m[32m`networks apply` is project-specific and requires an existing, uniquely[m[41m[m
+config/networks/README.md:63: trailing whitespace.
+[32m+[m[32midentified Compose network whose ownership labels match the investigation.[m[41m[m
+config/networks/README.md:64: trailing whitespace.
+[32m+[m[32mIt does not belong to machine setup and does not create a network. Construction[m[41m[m
+config/networks/README.md:65: trailing whitespace.
+[32m+[m[32mcreates that network, applies and verifies its boundary, then starts services.[m[41m[m
+config/policy/network-policy.md:15: trailing whitespace.
+[32m+[m[32mThe `isolated` profile requests denial of external, host, DNS, and proxy paths.[m[41m[m
+config/policy/network-policy.md:16: trailing whitespace.
+[32m+[m[32mThe current adapter does not implement distinct Windows-host, DNS, or proxy[m[41m[m
+config/policy/network-policy.md:17: trailing whitespace.
+[32m+[m[32menforcement, so it reports the supplied profiles as unsupported rather than[m[41m[m
+config/policy/network-policy.md:18: trailing whitespace.
+[32m+[m[32mclaiming those requested controls are enforced. Compose integrity safeguards[m[41m[m
+config/policy/network-policy.md:19: trailing whitespace.
+[32m+[m[32mreject published ports and host-access paths. Other profiles can request[m[41m[m
+config/policy/network-policy.md:20: trailing whitespace.
+[32m+[m[32mdifferent modes, but unsupported requirements fail closed.[m[41m[m
+config/policy/network-policy.md:35: trailing whitespace.
+[32m+[m[32mruntime acceptance tests. The supplied external-network policy also requires[m[41m[m
+config/policy/network-policy.md:36: trailing whitespace.
+[32m+[m[32mruntime acceptance, which the adapter does not implement; runtime support[m[41m[m
+config/policy/network-policy.md:37: trailing whitespace.
+[32m+[m[32mvalidation therefore rejects construction before Compose resources are[m[41m[m
+config/policy/network-policy.md:38: trailing whitespace.
+[32m+[m[32mcreated. A generated plan is not proof of enforcement.[m[41m[m
+config/policy/network-policy.md:39: trailing whitespace.
+[32m+[m[41m[m
+config/policy/network-policy.md:40: trailing whitespace.
+[32m+[m[32m`networks capabilities` reports Linux bridge-rule implementation separately[m[41m[m
+config/policy/network-policy.md:41: trailing whitespace.
+[32m+[m[32mfrom runtime acceptance. `runtime verify` and `runtime doctor` report an[m[41m[m
+config/policy/network-policy.md:42: trailing whitespace.
+[32m+[m[32munsupported selected policy explicitly; `runtime start` revalidates the policy[m[41m[m
+config/policy/network-policy.md:43: trailing whitespace.
+[32m+[m[32meven when the runtime state is already marked running and checks the[m[41m[m
+config/policy/network-policy.md:44: trailing whitespace.
+[32m+[m[32mread-only machine prerequisites before changing runtime state.[m[41m[m
+docs/experiment-authoring.md:41: trailing whitespace.
+[32m+[m[32mThe plan also includes `network_policy_supported` and any[m[41m[m
+docs/experiment-authoring.md:42: trailing whitespace.
+[32m+[m[32m`network_policy_capability_error`. Do not construct unless the policy is[m[41m[m
+docs/experiment-authoring.md:43: trailing whitespace.
+[32m+[m[32msupported; plan generation itself does not enforce it.[m[41m[m
+docs/experiment-authoring.md:49: trailing whitespace.
+[32m+[m[32msudo -v[m[41m[m
+docs/experiment-authoring.md:50: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks preflight[m[41m[m
+docs/experiment-authoring.md:59: trailing whitespace.
+[32m+[m[32m`construct-investigation` creates the project-owned Compose network and applies[m[41m[m
+docs/experiment-authoring.md:60: trailing whitespace.
+[32m+[m[32mand verifies its boundary before starting services. `networks apply` requires[m[41m[m
+docs/experiment-authoring.md:61: trailing whitespace.
+[32m+[m[32mthat network to exist; it does not create a network or replace construction.[m[41m[m
+docs/experiment-authoring.md:62: trailing whitespace.
+[32m+[m[32mThe supplied profiles currently require unsupported Windows-host, DNS, proxy,[m[41m[m
+docs/experiment-authoring.md:63: trailing whitespace.
+[32m+[m[32mand external runtime-acceptance boundaries, so construction correctly rejects[m[41m[m
+docs/experiment-authoring.md:64: trailing whitespace.
+[32m+[m[32mthem while the researcher’s policy still requires those controls. Disabling an[m[41m[m
+docs/experiment-authoring.md:65: trailing whitespace.
+[32m+[m[32munsupported boundary is an explicit reduction in guarantees, not evidence of[m[41m[m
+docs/experiment-authoring.md:66: trailing whitespace.
+[32m+[m[32misolation. No Windows Firewall or upstream isolation is implied.[m[41m[m
+docs/network-boundaries.md:24: trailing whitespace.
+[32m+[m[32msudo -v[m[41m[m
+docs/network-boundaries.md:25: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks preflight[m[41m[m
+docs/network-boundaries.md:30: trailing whitespace.
+[32m+[m[32m`preflight` checks the approved Docker context, default network inventory,[m[41m[m
+docs/network-boundaries.md:31: trailing whitespace.
+[32m+[m[32mfirewall backends, and root-readable rule listings. It is read-only and does not[m[41m[m
+docs/network-boundaries.md:32: trailing whitespace.
+[32m+[m[32mapply global or project rules. Planning reports policy support, but does not[m[41m[m
+docs/network-boundaries.md:33: trailing whitespace.
+[32m+[m[32mprove live enforcement. These setup operations do not create the investigation[m[41m[m
+docs/network-boundaries.md:34: trailing whitespace.
+[32m+[m[32mnetwork. Preflight's `ready` field means only that machine prerequisites were[m[41m[m
+docs/network-boundaries.md:35: trailing whitespace.
+[32m+[m[32mobserved; inspect its separate `policy_support` result before considering a[m[41m[m
+docs/network-boundaries.md:36: trailing whitespace.
+[32m+[m[32mruntime.[m[41m[m
+docs/network-boundaries.md:37: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:38: trailing whitespace.
+[32m+[m[32m`networks capabilities` distinguishes implemented Linux bridge rules from[m[41m[m
+docs/network-boundaries.md:39: trailing whitespace.
+[32m+[m[32mcontrols that remain unverified or unsupported. The Linux adapter scopes deny[m[41m[m
+docs/network-boundaries.md:40: trailing whitespace.
+[32m+[m[32mrules to the labelled project bridge, validates rule ordering against[m[41m[m
+docs/network-boundaries.md:41: trailing whitespace.
+[32m+[m[32munowned/conflicting firewall rules, and checks ownership before cleanup.[m[41m[m
+docs/network-boundaries.md:42: trailing whitespace.
+[32m+[m[32mThese structural checks are not packet-level runtime acceptance.[m[41m[m
+docs/network-boundaries.md:43: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:44: trailing whitespace.
+[32m+[m[32m`networks apply` requires the already-created, correctly labeled Compose[m[41m[m
+docs/network-boundaries.md:45: trailing whitespace.
+[32m+[m[32mproject network. The supported creation lifecycle is[m[41m[m
+docs/network-boundaries.md:46: trailing whitespace.
+[32m+[m[32m`construct-investigation`: Compose creates the network, the adapter applies and[m[41m[m
+docs/network-boundaries.md:47: trailing whitespace.
+[32m+[m[32mverifies the boundary, and only then does Compose start services. Do not create[m[41m[m
+docs/network-boundaries.md:48: trailing whitespace.
+[32m+[m[32ma substitute network manually or run `networks apply` before construction.[m[41m[m
+docs/network-boundaries.md:49: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:51: trailing whitespace.
+[32m+[m[32mIPv4/IPv6 bridge rules. The supplied profiles currently require Windows-host,[m[41m[m
+docs/network-boundaries.md:52: trailing whitespace.
+[32m+[m[32mDNS, proxy, and external runtime-acceptance controls that the adapter does not[m[41m[m
+docs/network-boundaries.md:53: trailing whitespace.
+[32m+[m[32menforce or perform; those profiles report unsupported and construction fails[m[41m[m
+docs/network-boundaries.md:54: trailing whitespace.
+[32m+[m[32mclosed.[m[41m[m
+docs/network-boundaries.md:55: trailing whitespace.
+[32m+[m[32mThe external-network policy also requires runtime acceptance. The lab has no[m[41m[m
+docs/network-boundaries.md:56: trailing whitespace.
+[32m+[m[32mpre-start disposable probe that can safely test blocked and permitted paths[m[41m[m
+docs/network-boundaries.md:57: trailing whitespace.
+[32m+[m[32mwithout starting experiment workloads, so the adapter does not claim that[m[41m[m
+docs/network-boundaries.md:58: trailing whitespace.
+[32m+[m[32macceptance and the mandatory startup gate remains closed.[m[41m[m
+docs/network-boundaries.md:59: trailing whitespace.
+[32m+[m[32m`runtime verify` therefore reports `controls_applied` and `effective_behavior`[m[41m[m
+docs/network-boundaries.md:60: trailing whitespace.
+[32m+[m[32mas `not-verified`, `runtime_acceptance` as `not-implemented`, and does not[m[41m[m
+docs/network-boundaries.md:61: trailing whitespace.
+[32m+[m[32mreport the runtime as healthy. A running lifecycle state or successful[m[41m[m
+docs/network-boundaries.md:62: trailing whitespace.
+[32m+[m[32mread-only preflight is not evidence that network controls are effective.[m[41m[m
+docs/network-boundaries.md:63: trailing whitespace.
+[32m+[m[32mWindows Firewall, VPN, upstream routing, physical, DNS, proxy, and complete WSL[m[41m[m
+docs/network-boundaries.md:64: trailing whitespace.
+[32m+[m[32misolation are not proved by the adapter. Restricted allow-list semantics,[m[41m[m
+docs/network-boundaries.md:65: trailing whitespace.
+[32m+[m[32mcapture, and temporary maintenance restoration fail closed. Live Docker[m[41m[m
+docs/network-boundaries.md:66: trailing whitespace.
+[32m+[m[32mconstruction, connectivity tests, and teardown remain operator acceptance[m[41m[m
+docs/network-boundaries.md:67: trailing whitespace.
+[32m+[m[32mactivities.[m[41m[m
+docs/network-boundaries.md:68: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:69: trailing whitespace.
+[32m+[m[32mInspect capability and machine state without mutation:[m[41m[m
+docs/network-boundaries.md:70: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:71: trailing whitespace.
+[32m+[m[32m```bash[m[41m[m
+docs/network-boundaries.md:72: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks capabilities[m[41m[m
+docs/network-boundaries.md:73: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks discover[m[41m[m
+docs/network-boundaries.md:74: trailing whitespace.
+[32m+[m[32msudo -v[m[41m[m
+docs/network-boundaries.md:75: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks preflight[m[41m[m
+docs/network-boundaries.md:76: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks plan --profile isolated \[m[41m[m
+docs/network-boundaries.md:77: trailing whitespace.
+[32m+[m[32m  --output state/network-plans/isolated.json[m[41m[m
+docs/network-boundaries.md:78: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py runtime verify[m[41m[m
+docs/network-boundaries.md:79: trailing whitespace.
+[32m+[m[32m```[m[41m[m
+docs/network-boundaries.md:80: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:81: trailing whitespace.
+[32m+[m[32mOnly if support checks pass, the project-specific commands are:[m[41m[m
+docs/network-boundaries.md:82: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:83: trailing whitespace.
+[32m+[m[32m```bash[m[41m[m
+docs/network-boundaries.md:84: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks apply sec-lab-i-<id> --profile <profile> \[m[41m[m
+docs/network-boundaries.md:85: trailing whitespace.
+[32m+[m[32m  --authorize "reviewed boundary application"[m[41m[m
+docs/network-boundaries.md:86: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks verify sec-lab-i-<id> --profile <profile>[m[41m[m
+docs/network-boundaries.md:87: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks test sec-lab-i-<id> --profile <profile> \[m[41m[m
+docs/network-boundaries.md:88: trailing whitespace.
+[32m+[m[32m  --authorize "approved acceptance review"[m[41m[m
+docs/network-boundaries.md:89: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks drift sec-lab-i-<id>[m[41m[m
+docs/network-boundaries.md:90: trailing whitespace.
+[32m+[m[32m```[m[41m[m
+docs/network-boundaries.md:91: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:92: trailing whitespace.
+[32m+[m[32mThe current `isolated` profile does not pass the support check; do not use[m[41m[m
+docs/network-boundaries.md:93: trailing whitespace.
+[32m+[m[32mproject-specific commands to bypass it. Cleanup is scoped to owned rules:[m[41m[m
+docs/network-boundaries.md:94: trailing whitespace.
+[32m+[m[41m[m
+docs/network-boundaries.md:95: trailing whitespace.
+[32m+[m[32m```bash[m[41m[m
+docs/network-boundaries.md:96: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks remove sec-lab-i-<id> --profile <profile> \[m[41m[m
+docs/network-boundaries.md:97: trailing whitespace.
+[32m+[m[32m  --authorize "reviewed owned-rule cleanup"[m[41m[m
+docs/network-boundaries.md:98: trailing whitespace.
+[32m+[m[32m```[m[41m[m
+docs/operations.md:40: trailing whitespace.
+[32m+[m[32msudo -v[m[41m[m
+docs/operations.md:41: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks preflight[m[41m[m
+docs/operations.md:46: trailing whitespace.
+[32m+[m[32mDiscovery, validation, preflight, and plan generation do not create networks[m[41m[m
+docs/operations.md:47: trailing whitespace.
+[32m+[m[32mor apply firewall rules. The plan reports policy support; the currently[m[41m[m
+docs/operations.md:48: trailing whitespace.
+[32m+[m[32msupplied profiles require unsupported Windows-host, DNS, proxy, and external[m[41m[m
+docs/operations.md:49: trailing whitespace.
+[32m+[m[32mruntime-acceptance controls and therefore cannot be used to construct workloads[m[41m[m
+docs/operations.md:50: trailing whitespace.
+[32m+[m[32mwhile those boundaries remain required. An unsupported plan is saved for[m[41m[m
+docs/operations.md:51: trailing whitespace.
+[32m+[m[32minspection but returns a failing command status; do not proceed based on a[m[41m[m
+docs/operations.md:52: trailing whitespace.
+[32m+[m[32mgenerated plan alone.[m[41m[m
+docs/operations.md:53: trailing whitespace.
+[32m+[m[32mProject `networks apply` and `verify` require the already-created, owned[m[41m[m
+docs/operations.md:54: trailing whitespace.
+[32m+[m[32mexperiment network. Construction owns the required ordering and will not[m[41m[m
+docs/operations.md:55: trailing whitespace.
+[32m+[m[32mstart services unless boundary application and verification succeed.[m[41m[m
+docs/requirements-traceability.md:16: trailing whitespace.
+[32m+[m[32m| Machine enforcement prerequisites | `lab.py networks preflight` | Read-only context, default-network, firewall backend, and privileged-rule-read checks |[m[41m[m
+docs/requirements-traceability.md:17: trailing whitespace.
+[32m+[m[32m| Enforcement planning | `lab.py networks plan` and construction plan | Capability status is explicit; unsupported boundaries fail closed |[m[41m[m
+docs/requirements-traceability.md:18: trailing whitespace.
+[32m+[m[32m| Boundary apply/verify | Construction lifecycle and `scripts/network-boundary.sh` | Project-owned interface rules; live Docker/firewall acceptance pending |[m[41m[m
+lab-set.md:20: trailing whitespace.
+[32m+[m[32m# Run `networks configure` only if machine.yaml is missing.[m[41m[m
+lab-set.md:23: trailing whitespace.
+[32m+[m[32msudo -v[m[41m[m
+lab-set.md:24: trailing whitespace.
+[32m+[m[32mpython3 lab/lab.py networks preflight[m[41m[m
+lab-set.md:34: trailing whitespace.
+[32m+[m[32mpulled automatically. The supplied profile plan currently reports[m[41m[m
+lab-set.md:35: trailing whitespace.
+[32m+[m[32m`supported: false` because it requires Windows-host, DNS, proxy, and external[m[41m[m
+lab-set.md:36: trailing whitespace.
+[32m+[m[32mruntime-acceptance controls that are not implemented. Do not construct an[m[41m[m
+lab-set.md:37: trailing whitespace.
+[32m+[m[32mexperiment until its reviewed effective policy reports supported; disabling[m[41m[m
+lab-set.md:38: trailing whitespace.
+[32m+[m[32mthose controls means those guarantees are not provided.[m[41m[m
+lab-set.md:118: trailing whitespace.
+[32m+[m[32mConstruction applies and verifies the required boundary after creating the[m[41m[m
+lab-set.md:119: trailing whitespace.
+[32m+[m[32mproject network and before workload startup. A separate apply is not a setup[m[41m[m
+lab-set.md:120: trailing whitespace.
+[32m+[m[32mstep and is only valid for an existing, uniquely owned project network. For[m[41m[m
+lab-set.md:121: trailing whitespace.
+[32m+[m[32mnormal operation, inspect the boundary after construction:[m[41m[m
+lab-set.md:134: trailing whitespace.
+[32m+[m[32mfirewall tables. The supplied profiles currently require unsupported[m[41m[m
+lab-set.md:135: trailing whitespace.
+[32m+[m[32mWindows-host, DNS, and proxy capabilities; construction fails closed until[m[41m[m
+lab-set.md:136: trailing whitespace.
+[32m+[m[32mthose requirements are resolved. `controlled-access`, capture, and temporary[m[41m[m
+lab-set.md:137: trailing whitespace.
+[32m+[m[32mmaintenance operations are also rejected until their semantics can be applied[m[41m[m
+lab-set.md:138: trailing whitespace.
+[32m+[m[32mand verified.[m[41m[m
+lab/cli.py:22: trailing whitespace.
+[32m+[m[32m    network_capabilities,[m[41m[m
+lab/cli.py:28: trailing whitespace.
+[32m+[m[32m    resolve_project_network_policy,[m[41m[m
+lab/cli.py:31: trailing whitespace.
+[32m+[m[32m    validate_network_setup,[m[41m[m
+lab/cli.py:82: trailing whitespace.
+[32m+[m[32m    network_preflight = network_commands.add_parser([m[41m[m
+lab/cli.py:83: trailing whitespace.
+[32m+[m[32m        "preflight", help="read-only check of machine network setup prerequisites"[m[41m[m
+lab/cli.py:84: trailing whitespace.
+[32m+[m[32m    )[m[41m[m
+lab/cli.py:207: trailing whitespace.
+[32m+[m[32m                print(json.dumps(network_capabilities(), indent=2, sort_keys=True))[m[41m[m
+lab/cli.py:219: trailing whitespace.
+[32m+[m[32m            elif args.network_command == "preflight":[m[41m[m
+lab/cli.py:220: trailing whitespace.
+[32m+[m[32m                result = validate_network_setup(ROOT)[m[41m[m
+lab/cli.py:221: trailing whitespace.
+[32m+[m[32m                print(json.dumps({"ready": True, **result}, indent=2, sort_keys=True))[m[41m[m
+lab/cli.py:234: trailing whitespace.
+[32m+[m[32m                if not plan["supported"]:[m[41m[m
+lab/cli.py:235: trailing whitespace.
+[32m+[m[32m                    raise LabError([m[41m[m
+lab/cli.py:236: trailing whitespace.
+[32m+[m[32m                        "network enforcement plan is unsupported: "[m[41m[m
+lab/cli.py:237: trailing whitespace.
+[32m+[m[32m                        f"{plan['capability_error']}"[m[41m[m
+lab/cli.py:238: trailing whitespace.
+[32m+[m[32m                    )[m[41m[m
+lab/cli.py:240: trailing whitespace.
+[32m+[m[32m                if args.network_command in {"apply", "remove", "test"} and not args.authorize.strip():[m[41m[m
+lab/cli.py:245: trailing whitespace.
+[32m+[m[32m                policy = resolve_project_network_policy(ROOT, args.project, profile)[m[41m[m
+lab/cli.py:246: trailing whitespace.
+[32m+[m[32m                if args.network_command == "apply":[m[41m[m
+lab/cli.py:247: trailing whitespace.
+[32m+[m[32m                    try:[m[41m[m
+lab/cli.py:248: trailing whitespace.
+[32m+[m[32m                        inspect_owned_network(args.project)[m[41m[m
+lab/cli.py:249: trailing whitespace.
+[32m+[m[32m                    except LabError as exc:[m[41m[m
+lab/cli.py:250: trailing whitespace.
+[32m+[m[32m                        investigation_id = args.project.removeprefix("sec-lab-i-")[m[41m[m
+lab/cli.py:251: trailing whitespace.
+[32m+[m[32m                        raise LabError([m[41m[m
+lab/cli.py:252: trailing whitespace.
+[32m+[m[32m                            f"cannot apply network boundary: {exc}. "[m[41m[m
+lab/cli.py:253: trailing whitespace.
+[32m+[m[32m                            "networks apply does not create a Docker network. Set "[m[41m[m
+lab/cli.py:254: trailing whitespace.
+[32m+[m[32m                            "REQUIRE_RUNTIME_APPROVAL=true in config/lab.env and export "[m[41m[m
+lab/cli.py:255: trailing whitespace.
+[32m+[m[32m                            "REQUIRE_RUNTIME_APPROVAL=true. First complete machine setup "[m[41m[m
+lab/cli.py:256: trailing whitespace.
+[32m+[m[32m                            "with `python3 lab/lab.py networks preflight`; inspect "[m[41m[m
+lab/cli.py:257: trailing whitespace.
+[32m+[m[32m                            "your specification with `python3 lab/lab.py "[m[41m[m
+lab/cli.py:258: trailing whitespace.
+[32m+[m[32m                            "validate-investigation <specification.yaml>`, then generate "[m[41m[m
+lab/cli.py:259: trailing whitespace.
+[32m+[m[32m                            "its construction plan with `python3 lab/lab.py plan "[m[41m[m
+lab/cli.py:260: trailing whitespace.
+[32m+[m[32m                            "<specification.yaml> --investigation-id "[m[41m[m
+lab/cli.py:261: trailing whitespace.
+[32m+[m[32m                            f"{investigation_id} --output state/plans/{investigation_id}.json`. "[m[41m[m
+lab/cli.py:262: trailing whitespace.
+[32m+[m[32m                            "Continue only if that plan reports "[m[41m[m
+lab/cli.py:263: trailing whitespace.
+[32m+[m[32m                            "`network_policy_supported: true`. Then run "[m[41m[m
+lab/cli.py:264: trailing whitespace.
+[32m+[m[32m                            "`python3 lab/lab.py construct-investigation "[m[41m[m
+lab/cli.py:265: trailing whitespace.
+[32m+[m[32m                            f"<specification.yaml> --investigation-id {investigation_id} "[m[41m[m
+lab/cli.py:266: trailing whitespace.
+[32m+[m[32m                            "--authorize \"approved local construction after plan review\"`. "[m[41m[m
+lab/cli.py:267: trailing whitespace.
+[32m+[m[32m                            "Construction creates the owned Compose network, applies and "[m[41m[m
+lab/cli.py:268: trailing whitespace.
+[32m+[m[32m                            "verifies its boundary, and only then starts workloads; do not "[m[41m[m
+lab/cli.py:269: trailing whitespace.
+[32m+[m[32m                            "create a substitute network manually."[m[41m[m
+lab/cli.py:270: trailing whitespace.
+[32m+[m[32m                        ) from exc[m[41m[m
+lab/cli.py:271: trailing whitespace.
+[32m+[m[32m                if args.network_command != "remove":[m[41m[m
+lab/cli.py:272: trailing whitespace.
+[32m+[m[32m                    validate_runtime_support(policy)[m[41m[m
+lab/cli.py:358: trailing whitespace.
+[32m+[m[32m            plan = json.loads(output.read_text(encoding="utf-8"))[m[41m[m
+lab/cli.py:359: trailing whitespace.
+[32m+[m[32m            if not plan["network_policy_supported"]:[m[41m[m
+lab/cli.py:360: trailing whitespace.
+[32m+[m[32m                raise LabError([m[41m[m
+lab/cli.py:361: trailing whitespace.
+[32m+[m[32m                    f"construction plan is unsupported; inspect {output}: "[m[41m[m
+lab/cli.py:362: trailing whitespace.
+[32m+[m[32m                    f"{plan['network_policy_capability_error']}"[m[41m[m
+lab/cli.py:363: trailing whitespace.
+[32m+[m[32m                )[m[41m[m
+lab/cli.py:364: trailing whitespace.
+[32m+[m[32m            print([m[41m[m
+lab/cli.py:365: trailing whitespace.
+[32m+[m[32m                f"PASS: construction plan written to {output} "[m[41m[m
+lab/cli.py:366: trailing whitespace.
+[32m+[m[32m                "(network policy supported)"[m[41m[m
+lab/cli.py:367: trailing whitespace.
+[32m+[m[32m            )[m[41m[m
+lab/networks.py:9: trailing whitespace.
+[32m+[m[32mimport shlex[m[41m[m
+lab/networks.py:264: trailing whitespace.
+[32m+[m[32m    firewall_boundaries = {[m[41m[m
+lab/networks.py:265: trailing whitespace.
+[32m+[m[32m        "ipv4": ("iptables",),[m[41m[m
+lab/networks.py:266: trailing whitespace.
+[32m+[m[32m        "ipv6": ("ip6tables",),[m[41m[m
+lab/networks.py:267: trailing whitespace.
+[32m+[m[32m        "lab_ingress": ("iptables", "ip6tables"),[m[41m[m
+lab/networks.py:268: trailing whitespace.
+[32m+[m[32m        "lab_egress": ("iptables", "ip6tables"),[m[41m[m
+lab/networks.py:269: trailing whitespace.
+[32m+[m[32m        "external_networks": ("forwarding_rules",),[m[41m[m
+lab/networks.py:270: trailing whitespace.
+[32m+[m[32m    }[m[41m[m
+lab/networks.py:271: trailing whitespace.
+[32m+[m[32m    required_scopes = {[m[41m[m
+lab/networks.py:272: trailing whitespace.
+[32m+[m[32m        "ipv4": "investigation-bridge",[m[41m[m
+lab/networks.py:273: trailing whitespace.
+[32m+[m[32m        "ipv6": "investigation-bridge",[m[41m[m
+lab/networks.py:274: trailing whitespace.
+[32m+[m[32m        "lab_ingress": "investigation-network",[m[41m[m
+lab/networks.py:275: trailing whitespace.
+[32m+[m[32m        "lab_egress": "investigation-network",[m[41m[m
+lab/networks.py:276: trailing whitespace.
+[32m+[m[32m        "external_networks": "lan-internet-vpn",[m[41m[m
+lab/networks.py:277: trailing whitespace.
+[32m+[m[32m    }[m[41m[m
+lab/networks.py:284: trailing whitespace.
+[32m+[m[32m        if name in {"ipv4", "ipv6"} and ([m[41m[m
+lab/networks.py:285: trailing whitespace.
+[32m+[m[32m            not boundary["enabled"] or boundary["mode"] != "deny"[m[41m[m
+lab/networks.py:286: trailing whitespace.
+[32m+[m[32m        ):[m[41m[m
+lab/networks.py:287: trailing whitespace.
+[32m+[m[32m            unsupported.append(f"{name}=required-deny")[m[41m[m
+lab/networks.py:288: trailing whitespace.
+[32m+[m[32m            continue[m[41m[m
+lab/networks.py:289: trailing whitespace.
+[32m+[m[32m        if name in firewall_boundaries and not boundary["enabled"]:[m[41m[m
+lab/networks.py:290: trailing whitespace.
+[32m+[m[32m            unsupported.append(f"{name}=required-deny")[m[41m[m
+lab/networks.py:291: trailing whitespace.
+[32m+[m[32m            continue[m[41m[m
+lab/networks.py:294: trailing whitespace.
+[32m+[m[32m        if boundary["rules"] or boundary["exceptions"]:[m[41m[m
+lab/networks.py:295: trailing whitespace.
+[32m+[m[32m            unsupported.append(f"{name}=custom-rules")[m[41m[m
+lab/networks.py:296: trailing whitespace.
+[32m+[m[32m            continue[m[41m[m
+lab/networks.py:297: trailing whitespace.
+[32m+[m[32m        if name == "windows_host":[m[41m[m
+lab/networks.py:298: trailing whitespace.
+[32m+[m[32m            unsupported.append("windows_host=windows-firewall-required")[m[41m[m
+lab/networks.py:299: trailing whitespace.
+[32m+[m[32m            continue[m[41m[m
+lab/networks.py:300: trailing whitespace.
+[32m+[m[32m        if name == "capture":[m[41m[m
+lab/networks.py:301: trailing whitespace.
+[32m+[m[32m            unsupported.append("capture=runtime-capture-not-implemented")[m[41m[m
+lab/networks.py:302: trailing whitespace.
+[32m+[m[32m            continue[m[41m[m
+lab/networks.py:303: trailing whitespace.
+[32m+[m[32m        if name in {"dns", "proxies"}:[m[41m[m
+lab/networks.py:304: trailing whitespace.
+[32m+[m[32m            unsupported.append(f"{name}=dedicated-enforcement-not-implemented")[m[41m[m
+lab/networks.py:305: trailing whitespace.
+[32m+[m[32m            continue[m[41m[m
+lab/networks.py:306: trailing whitespace.
+[32m+[m[32m        if name in firewall_boundaries:[m[41m[m
+lab/networks.py:309: trailing whitespace.
+[32m+[m[32m                continue[m[41m[m
+lab/networks.py:310: trailing whitespace.
+[32m+[m[32m            if boundary.get("adapter") != "linux-wsl":[m[41m[m
+lab/networks.py:311: trailing whitespace.
+[32m+[m[32m                unsupported.append(f"{name}=unsupported-adapter")[m[41m[m
+lab/networks.py:312: trailing whitespace.
+[32m+[m[32m            if boundary.get("scope") != required_scopes[name]:[m[41m[m
+lab/networks.py:313: trailing whitespace.
+[32m+[m[32m                unsupported.append(f"{name}=unresolved-scope")[m[41m[m
+lab/networks.py:314: trailing whitespace.
+[32m+[m[32m            expected_verification = set(firewall_boundaries[name])[m[41m[m
+lab/networks.py:315: trailing whitespace.
+[32m+[m[32m            if name == "external_networks":[m[41m[m
+lab/networks.py:316: trailing whitespace.
+[32m+[m[32m                expected_verification.add("runtime_acceptance")[m[41m[m
+lab/networks.py:317: trailing whitespace.
+[32m+[m[32m            if set(boundary["verification"]) != expected_verification:[m[41m[m
+lab/networks.py:318: trailing whitespace.
+[32m+[m[32m                unsupported.append(f"{name}=unsupported-verification")[m[41m[m
+lab/networks.py:319: trailing whitespace.
+[32m+[m[32m            if name == "external_networks":[m[41m[m
+lab/networks.py:320: trailing whitespace.
+[32m+[m[32m                unsupported.append([m[41m[m
+lab/networks.py:321: trailing whitespace.
+[32m+[m[32m                    "external_networks=runtime-acceptance-not-implemented"[m[41m[m
+lab/networks.py:322: trailing whitespace.
+[32m+[m[32m                )[m[41m[m
+lab/networks.py:325: trailing whitespace.
+[32m+[m[32m            "selected network policy is not supported by the "[m[41m[m
+lab/networks.py:330: trailing whitespace.
+[32m+[m[32mdef network_capabilities() -> dict[str, Any]:[m[41m[m
+lab/networks.py:331: trailing whitespace.
+[32m+[m[32m    """Describe implemented controls separately from machine/runtime proof."""[m[41m[m
+lab/networks.py:332: trailing whitespace.
+[32m+[m[32m    return {[m[41m[m
+lab/networks.py:333: trailing whitespace.
+[32m+[m[32m        "adapter": "linux-wsl",[m[41m[m
+lab/networks.py:334: trailing whitespace.
+[32m+[m[32m        "enforcement_state": "not-verified-until-project-apply-and-verify",[m[41m[m
+lab/networks.py:335: trailing whitespace.
+[32m+[m[32m        "controls": {[m[41m[m
+lab/networks.py:336: trailing whitespace.
+[32m+[m[32m            "ipv4": {[m[41m[m
+lab/networks.py:337: trailing whitespace.
+[32m+[m[32m                "status": "supported",[m[41m[m
+lab/networks.py:338: trailing whitespace.
+[32m+[m[32m                "modes": ["deny"],[m[41m[m
+lab/networks.py:339: trailing whitespace.
+[32m+[m[32m                "verification": ["iptables"],[m[41m[m
+lab/networks.py:340: trailing whitespace.
+[32m+[m[32m                "scope": "owned investigation bridge",[m[41m[m
+lab/networks.py:341: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:342: trailing whitespace.
+[32m+[m[32m            "ipv6": {[m[41m[m
+lab/networks.py:343: trailing whitespace.
+[32m+[m[32m                "status": "supported",[m[41m[m
+lab/networks.py:344: trailing whitespace.
+[32m+[m[32m                "modes": ["deny"],[m[41m[m
+lab/networks.py:345: trailing whitespace.
+[32m+[m[32m                "verification": ["ip6tables"],[m[41m[m
+lab/networks.py:346: trailing whitespace.
+[32m+[m[32m                "scope": "owned investigation bridge",[m[41m[m
+lab/networks.py:347: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:348: trailing whitespace.
+[32m+[m[32m            "lab_ingress": {[m[41m[m
+lab/networks.py:349: trailing whitespace.
+[32m+[m[32m                "status": "supported",[m[41m[m
+lab/networks.py:350: trailing whitespace.
+[32m+[m[32m                "modes": ["deny"],[m[41m[m
+lab/networks.py:351: trailing whitespace.
+[32m+[m[32m                "verification": ["iptables", "ip6tables"],[m[41m[m
+lab/networks.py:352: trailing whitespace.
+[32m+[m[32m                "scope": "owned investigation bridge",[m[41m[m
+lab/networks.py:353: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:354: trailing whitespace.
+[32m+[m[32m            "lab_egress": {[m[41m[m
+lab/networks.py:355: trailing whitespace.
+[32m+[m[32m                "status": "supported",[m[41m[m
+lab/networks.py:356: trailing whitespace.
+[32m+[m[32m                "modes": ["deny"],[m[41m[m
+lab/networks.py:357: trailing whitespace.
+[32m+[m[32m                "verification": ["iptables", "ip6tables"],[m[41m[m
+lab/networks.py:358: trailing whitespace.
+[32m+[m[32m                "scope": "owned investigation bridge",[m[41m[m
+lab/networks.py:359: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:360: trailing whitespace.
+[32m+[m[32m            "docker_networks": {[m[41m[m
+lab/networks.py:361: trailing whitespace.
+[32m+[m[32m                "status": "supported",[m[41m[m
+lab/networks.py:362: trailing whitespace.
+[32m+[m[32m                "enforcement_layer": "Compose validator",[m[41m[m
+lab/networks.py:363: trailing whitespace.
+[32m+[m[32m                "mechanism": "Requires one owned internal bridge and rejects external or host networking.",[m[41m[m
+lab/networks.py:364: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:365: trailing whitespace.
+[32m+[m[32m            "filesystem": {[m[41m[m
+lab/networks.py:366: trailing whitespace.
+[32m+[m[32m                "status": "supported",[m[41m[m
+lab/networks.py:367: trailing whitespace.
+[32m+[m[32m                "enforcement_layer": "Compose validator",[m[41m[m
+lab/networks.py:368: trailing whitespace.
+[32m+[m[32m                "mechanism": "Rejects host bind/volume mounts, Docker socket mounts, and Compose file/config injection.",[m[41m[m
+lab/networks.py:369: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:370: trailing whitespace.
+[32m+[m[32m            "resource_access": {[m[41m[m
+lab/networks.py:371: trailing whitespace.
+[32m+[m[32m                "status": "supported",[m[41m[m
+lab/networks.py:372: trailing whitespace.
+[32m+[m[32m                "enforcement_layer": "Compose validator",[m[41m[m
+lab/networks.py:373: trailing whitespace.
+[32m+[m[32m                "mechanism": "Requires non-root, read-only root, all capabilities dropped, no-new-privileges, and bounded resources.",[m[41m[m
+lab/networks.py:374: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:375: trailing whitespace.
+[32m+[m[32m            "external_networks": {[m[41m[m
+lab/networks.py:376: trailing whitespace.
+[32m+[m[32m                "status": "not-verified",[m[41m[m
+lab/networks.py:377: trailing whitespace.
+[32m+[m[32m                "implemented_enforcement": ["project-scoped IPv4/IPv6 forwarding DROP rules"],[m[41m[m
+lab/networks.py:378: trailing whitespace.
+[32m+[m[32m                "available_verification": ["forwarding_rules"],[m[41m[m
+lab/networks.py:379: trailing whitespace.
+[32m+[m[32m                "required_verification": ["forwarding_rules", "runtime_acceptance"],[m[41m[m
+lab/networks.py:380: trailing whitespace.
+[32m+[m[32m                "missing": ["runtime_acceptance"],[m[41m[m
+lab/networks.py:381: trailing whitespace.
+[32m+[m[32m                "reason": "No non-workload packet probe is available before services start.",[m[41m[m
+lab/networks.py:382: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:383: trailing whitespace.
+[32m+[m[32m            "windows_host": {[m[41m[m
+lab/networks.py:384: trailing whitespace.
+[32m+[m[32m                "status": "unsupported",[m[41m[m
+lab/networks.py:385: trailing whitespace.
+[32m+[m[32m                "reason": "Linux/WSL firewall rules do not control Windows Defender Firewall.",[m[41m[m
+lab/networks.py:386: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:387: trailing whitespace.
+[32m+[m[32m            "dns": {[m[41m[m
+lab/networks.py:388: trailing whitespace.
+[32m+[m[32m                "status": "unsupported",[m[41m[m
+lab/networks.py:389: trailing whitespace.
+[32m+[m[32m                "reason": "Docker embedded DNS and daemon-side resolver forwarding are not isolated or acceptance-tested by this adapter.",[m[41m[m
+lab/networks.py:390: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:391: trailing whitespace.
+[32m+[m[32m            "proxies": {[m[41m[m
+lab/networks.py:392: trailing whitespace.
+[32m+[m[32m                "status": "unsupported",[m[41m[m
+lab/networks.py:393: trailing whitespace.
+[32m+[m[32m                "reason": "Proxy endpoint traffic cannot be distinguished from arbitrary traffic without declared endpoints; environment review is not network enforcement.",[m[41m[m
+lab/networks.py:394: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:395: trailing whitespace.
+[32m+[m[32m            "capture": {[m[41m[m
+lab/networks.py:396: trailing whitespace.
+[32m+[m[32m                "status": "unsupported",[m[41m[m
+lab/networks.py:397: trailing whitespace.
+[32m+[m[32m                "reason": "Runtime capture is not implemented by the boundary adapter.",[m[41m[m
+lab/networks.py:398: trailing whitespace.
+[32m+[m[32m            },[m[41m[m
+lab/networks.py:399: trailing whitespace.
+[32m+[m[32m        },[m[41m[m
+lab/networks.py:400: trailing whitespace.
+[32m+[m[32m        "machine_state": "not-verified",[m[41m[m
+lab/networks.py:401: trailing whitespace.
+[32m+[m[32m        "runtime_acceptance": "not-implemented",[m[41m[m
+lab/networks.py:402: trailing whitespace.
+[32m+[m[32m    }[m[41m[m
+lab/networks.py:403: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:404: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:405: trailing whitespace.
+[32m+[m[32mdef validate_firewall_chain_priority([m[41m[m
+lab/networks.py:406: trailing whitespace.
+[32m+[m[32m    chain: str,[m[41m[m
+lab/networks.py:407: trailing whitespace.
+[32m+[m[32m    rules_output: str,[m[41m[m
+lab/networks.py:408: trailing whitespace.
+[32m+[m[32m    expected_comments: list[str],[m[41m[m
+lab/networks.py:409: trailing whitespace.
+[32m+[m[32m) -> None:[m[41m[m
+lab/networks.py:410: trailing whitespace.
+[32m+[m[32m    """Reject an unowned rule ahead of any required project DROP rule."""[m[41m[m
+lab/networks.py:411: trailing whitespace.
+[32m+[m[32m    rules = [][m[41m[m
+lab/networks.py:412: trailing whitespace.
+[32m+[m[32m    for line in rules_output.splitlines():[m[41m[m
+lab/networks.py:413: trailing whitespace.
+[32m+[m[32m        try:[m[41m[m
+lab/networks.py:414: trailing whitespace.
+[32m+[m[32m            tokens = shlex.split(line)[m[41m[m
+lab/networks.py:415: trailing whitespace.
+[32m+[m[32m        except ValueError as exc:[m[41m[m
+lab/networks.py:416: trailing whitespace.
+[32m+[m[32m            raise LabError(f"cannot parse {chain} firewall rules: {exc}") from exc[m[41m[m
+lab/networks.py:417: trailing whitespace.
+[32m+[m[32m        if len(tokens) >= 3 and tokens[:2] == ["-A", chain]:[m[41m[m
+lab/networks.py:418: trailing whitespace.
+[32m+[m[32m            rules.append(tokens)[m[41m[m
+lab/networks.py:419: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:420: trailing whitespace.
+[32m+[m[32m    positions: dict[str, list[int]] = {}[m[41m[m
+lab/networks.py:421: trailing whitespace.
+[32m+[m[32m    for index, rule in enumerate(rules):[m[41m[m
+lab/networks.py:422: trailing whitespace.
+[32m+[m[32m        if "--comment" in rule:[m[41m[m
+lab/networks.py:423: trailing whitespace.
+[32m+[m[32m            marker = rule.index("--comment")[m[41m[m
+lab/networks.py:424: trailing whitespace.
+[32m+[m[32m            if marker + 1 < len(rule):[m[41m[m
+lab/networks.py:425: trailing whitespace.
+[32m+[m[32m                positions.setdefault(rule[marker + 1], []).append(index)[m[41m[m
+lab/networks.py:426: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:427: trailing whitespace.
+[32m+[m[32m    for comment in expected_comments:[m[41m[m
+lab/networks.py:428: trailing whitespace.
+[32m+[m[32m        found = positions.get(comment, [])[m[41m[m
+lab/networks.py:429: trailing whitespace.
+[32m+[m[32m        if len(found) != 1:[m[41m[m
+lab/networks.py:430: trailing whitespace.
+[32m+[m[32m            raise LabError([m[41m[m
+lab/networks.py:431: trailing whitespace.
+[32m+[m[32m                f"expected exactly one installed rule {comment}; found {len(found)}"[m[41m[m
+lab/networks.py:432: trailing whitespace.
+[32m+[m[32m            )[m[41m[m
+lab/networks.py:433: trailing whitespace.
+[32m+[m[32m        for prior in rules[:found[0]]:[m[41m[m
+lab/networks.py:434: trailing whitespace.
+[32m+[m[32m            prior_comment = None[m[41m[m
+lab/networks.py:435: trailing whitespace.
+[32m+[m[32m            if "--comment" in prior:[m[41m[m
+lab/networks.py:436: trailing whitespace.
+[32m+[m[32m                marker = prior.index("--comment")[m[41m[m
+lab/networks.py:437: trailing whitespace.
+[32m+[m[32m                if marker + 1 < len(prior):[m[41m[m
+lab/networks.py:438: trailing whitespace.
+[32m+[m[32m                    prior_comment = prior[marker + 1][m[41m[m
+lab/networks.py:439: trailing whitespace.
+[32m+[m[32m            if not prior_comment or not prior_comment.startswith("ithoka-sec-lab-"):[m[41m[m
+lab/networks.py:440: trailing whitespace.
+[32m+[m[32m                raise LabError([m[41m[m
+lab/networks.py:441: trailing whitespace.
+[32m+[m[32m                    f"unowned firewall rule precedes {comment} in {chain}; "[m[41m[m
+lab/networks.py:442: trailing whitespace.
+[32m+[m[32m                    "effective enforcement is ambiguous"[m[41m[m
+lab/networks.py:443: trailing whitespace.
+[32m+[m[32m                )[m[41m[m
+lab/networks.py:444: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:445: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:446: trailing whitespace.
+[32m+[m[32mdef validate_network_setup([m[41m[m
+lab/networks.py:447: trailing whitespace.
+[32m+[m[32m    root: Path,[m[41m[m
+lab/networks.py:448: trailing whitespace.
+[32m+[m[32m    runner: Any = subprocess.run,[m[41m[m
+lab/networks.py:449: trailing whitespace.
+[32m+[m[32m) -> dict[str, Any]:[m[41m[m
+lab/networks.py:450: trailing whitespace.
+[32m+[m[32m    """Check read-only machine prerequisites independently of any experiment."""[m[41m[m
+lab/networks.py:451: trailing whitespace.
+[32m+[m[32m    machine = validate_machine_configuration(root)[m[41m[m
+lab/networks.py:452: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:453: trailing whitespace.
+[32m+[m[32m    for command in ("docker", "sudo", "iptables", "ip6tables"):[m[41m[m
+lab/networks.py:454: trailing whitespace.
+[32m+[m[32m        if shutil.which(command) is None:[m[41m[m
+lab/networks.py:455: trailing whitespace.
+[32m+[m[32m            raise LabError(f"network setup requires command in PATH: {command}")[m[41m[m
+lab/networks.py:456: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:457: trailing whitespace.
+[32m+[m[32m    def run_checked(command: list[str], label: str) -> str:[m[41m[m
+lab/networks.py:458: trailing whitespace.
+[32m+[m[32m        try:[m[41m[m
+lab/networks.py:459: trailing whitespace.
+[32m+[m[32m            result = runner([m[41m[m
+lab/networks.py:460: trailing whitespace.
+[32m+[m[32m                command, capture_output=True, text=True, check=False, timeout=20[m[41m[m
+lab/networks.py:461: trailing whitespace.
+[32m+[m[32m            )[m[41m[m
+lab/networks.py:462: trailing whitespace.
+[32m+[m[32m        except (OSError, subprocess.SubprocessError) as exc:[m[41m[m
+lab/networks.py:463: trailing whitespace.
+[32m+[m[32m            raise LabError(f"network setup could not {label}: {exc}") from exc[m[41m[m
+lab/networks.py:464: trailing whitespace.
+[32m+[m[32m        if result.returncode != 0:[m[41m[m
+lab/networks.py:465: trailing whitespace.
+[32m+[m[32m            detail = result.stderr.strip() or f"exit {result.returncode}"[m[41m[m
+lab/networks.py:466: trailing whitespace.
+[32m+[m[32m            raise LabError(f"network setup could not {label}: {detail}")[m[41m[m
+lab/networks.py:467: trailing whitespace.
+[32m+[m[32m        return result.stdout.strip()[m[41m[m
+lab/networks.py:468: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:469: trailing whitespace.
+[32m+[m[32m    context = run_checked(["docker", "context", "show"], "read Docker context")[m[41m[m
+lab/networks.py:470: trailing whitespace.
+[32m+[m[32m    approved_context = machine["operator_confirmed"]["approved_docker_context"][m[41m[m
+lab/networks.py:471: trailing whitespace.
+[32m+[m[32m    if context != approved_context:[m[41m[m
+lab/networks.py:472: trailing whitespace.
+[32m+[m[32m        raise LabError([m[41m[m
+lab/networks.py:473: trailing whitespace.
+[32m+[m[32m            "network setup Docker context does not match the operator-approved "[m[41m[m
+lab/networks.py:474: trailing whitespace.
+[32m+[m[32m            f"context ({context})"[m[41m[m
+lab/networks.py:475: trailing whitespace.
+[32m+[m[32m        )[m[41m[m
+lab/networks.py:476: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:477: trailing whitespace.
+[32m+[m[32m    network_names = set(run_checked([m[41m[m
+lab/networks.py:478: trailing whitespace.
+[32m+[m[32m        ["docker", "network", "ls", "--format", "{{.Name}}"],[m[41m[m
+lab/networks.py:479: trailing whitespace.
+[32m+[m[32m        "enumerate Docker networks",[m[41m[m
+lab/networks.py:480: trailing whitespace.
+[32m+[m[32m    ).splitlines())[m[41m[m
+lab/networks.py:481: trailing whitespace.
+[32m+[m[32m    missing_defaults = {"bridge", "host", "none"} - network_names[m[41m[m
+lab/networks.py:482: trailing whitespace.
+[32m+[m[32m    if missing_defaults:[m[41m[m
+lab/networks.py:483: trailing whitespace.
+[32m+[m[32m        raise LabError([m[41m[m
+lab/networks.py:484: trailing whitespace.
+[32m+[m[32m            "network setup did not find the default Docker networks: "[m[41m[m
+lab/networks.py:485: trailing whitespace.
+[32m+[m[32m            + ", ".join(sorted(missing_defaults))[m[41m[m
+lab/networks.py:486: trailing whitespace.
+[32m+[m[32m        )[m[41m[m
+lab/networks.py:487: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:488: trailing whitespace.
+[32m+[m[32m    backends = {}[m[41m[m
+lab/networks.py:489: trailing whitespace.
+[32m+[m[32m    for command in ("iptables", "ip6tables"):[m[41m[m
+lab/networks.py:490: trailing whitespace.
+[32m+[m[32m        version = run_checked([m[41m[m
+lab/networks.py:491: trailing whitespace.
+[32m+[m[32m            ["sudo", "-n", command, "--version"],[m[41m[m
+lab/networks.py:492: trailing whitespace.
+[32m+[m[32m            f"read privileged {command} version",[m[41m[m
+lab/networks.py:493: trailing whitespace.
+[32m+[m[32m        )[m[41m[m
+lab/networks.py:494: trailing whitespace.
+[32m+[m[32m        match = re.search(r"\((legacy|nf_tables)\)$", version)[m[41m[m
+lab/networks.py:495: trailing whitespace.
+[32m+[m[32m        if match is None:[m[41m[m
+lab/networks.py:496: trailing whitespace.
+[32m+[m[32m            raise LabError([m[41m[m
+lab/networks.py:497: trailing whitespace.
+[32m+[m[32m                f"network setup cannot identify the {command} backend: {version}"[m[41m[m
+lab/networks.py:498: trailing whitespace.
+[32m+[m[32m            )[m[41m[m
+lab/networks.py:499: trailing whitespace.
+[32m+[m[32m        run_checked([m[41m[m
+lab/networks.py:500: trailing whitespace.
+[32m+[m[32m            ["sudo", "-n", command, "-S"],[m[41m[m
+lab/networks.py:501: trailing whitespace.
+[32m+[m[32m            f"read privileged {command} rules",[m[41m[m
+lab/networks.py:502: trailing whitespace.
+[32m+[m[32m        )[m[41m[m
+lab/networks.py:503: trailing whitespace.
+[32m+[m[32m        backends[command] = match.group(1)[m[41m[m
+lab/networks.py:504: trailing whitespace.
+[32m+[m[32m    if backends["iptables"] != backends["ip6tables"]:[m[41m[m
+lab/networks.py:505: trailing whitespace.
+[32m+[m[32m        raise LabError([m[41m[m
+lab/networks.py:506: trailing whitespace.
+[32m+[m[32m            "network setup requires compatible IPv4 and IPv6 firewall backends; "[m[41m[m
+lab/networks.py:507: trailing whitespace.
+[32m+[m[32m            f"found {backends['iptables']} and {backends['ip6tables']}"[m[41m[m
+lab/networks.py:508: trailing whitespace.
+[32m+[m[32m        )[m[41m[m
+lab/networks.py:509: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:510: trailing whitespace.
+[32m+[m[32m    selected_policy = resolve_network_policy(root)[m[41m[m
+lab/networks.py:511: trailing whitespace.
+[32m+[m[32m    policy_error = None[m[41m[m
+lab/networks.py:512: trailing whitespace.
+[32m+[m[32m    try:[m[41m[m
+lab/networks.py:513: trailing whitespace.
+[32m+[m[32m        validate_runtime_support(selected_policy)[m[41m[m
+lab/networks.py:514: trailing whitespace.
+[32m+[m[32m    except LabError as exc:[m[41m[m
+lab/networks.py:515: trailing whitespace.
+[32m+[m[32m        policy_error = str(exc)[m[41m[m
+lab/networks.py:516: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:517: trailing whitespace.
+[32m+[m[32m    return {[m[41m[m
+lab/networks.py:518: trailing whitespace.
+[32m+[m[32m        "scope": "machine-prerequisites-only",[m[41m[m
+lab/networks.py:519: trailing whitespace.
+[32m+[m[32m        "ready": True,[m[41m[m
+lab/networks.py:520: trailing whitespace.
+[32m+[m[32m        "docker_context": context,[m[41m[m
+lab/networks.py:521: trailing whitespace.
+[32m+[m[32m        "default_networks_observed": ["bridge", "host", "none"],[m[41m[m
+lab/networks.py:522: trailing whitespace.
+[32m+[m[32m        "firewall_backends": backends,[m[41m[m
+lab/networks.py:523: trailing whitespace.
+[32m+[m[32m        "firewall_rules_readable_as_root": True,[m[41m[m
+lab/networks.py:524: trailing whitespace.
+[32m+[m[32m        "selected_profile": selected_policy["profile"],[m[41m[m
+lab/networks.py:525: trailing whitespace.
+[32m+[m[32m        "policy_support": "supported" if policy_error is None else "unsupported",[m[41m[m
+lab/networks.py:526: trailing whitespace.
+[32m+[m[32m        "policy_capability_error": policy_error,[m[41m[m
+lab/networks.py:527: trailing whitespace.
+[32m+[m[32m        "read_only": True,[m[41m[m
+lab/networks.py:528: trailing whitespace.
+[32m+[m[32m    }[m[41m[m
+lab/networks.py:529: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:530: trailing whitespace.
+[32m+[m[41m[m
+lab/networks.py:622: trailing whitespace.
+[32m+[m[32m    if current_context.startswith("unavailable:"):[m[41m[m
+lab/networks.py:623: trailing whitespace.
+[32m+[m[32m        raise LabError(f"cannot determine the current Docker context: {current_context}")[m[41m[m
+lab/networks.py:624: trailing whitespace.
+[32m+[m[32m    if current_context != confirmed["approved_docker_context"]:[m[41m[m
+lab/networks.py:625: trailing whitespace.
+[32m+[m[32m        raise LabError([m[41m[m
+lab/networks.py:626: trailing whitespace.
+[32m+[m[32m            f"{path}.operator_confirmed.approved_docker_context does not match "[m[41m[m
+lab/networks.py:627: trailing whitespace.
+[32m+[m[32m            f"the current Docker context ({current_context})"[m[41m[m
+lab/networks.py:628: trailing whitespace.
+[32m+[m[32m        )[m[41m[m
+lab/networks.py:647: trailing whitespace.
+[32m+[m[32m    try:[m[41m[m
+lab/networks.py:648: trailing whitespace.
+[32m+[m[32m        result = subprocess.run([m[41m[m
+lab/networks.py:649: trailing whitespace.
+[32m+[m[32m            [[m[41m[m
+lab/networks.py:650: trailing whitespace.
+[32m+[m[32m                "docker", "network", "ls", "-q", "--no-trunc",[m[41m[m
+lab/networks.py:651: trailing whitespace.
+[32m+[m[32m                "--filter", f"label=com.docker.compose.project={project}",[m[41m[m
+lab/networks.py:652: trailing whitespace.
+[32m+[m[32m            ],[m[41m[m
+lab/networks.py:653: trailing whitespace.
+[32m+[m[32m            capture_output=True, text=True, check=False, timeout=20,[m[41m[m
+lab/networks.py:654: trailing whitespace.
+[32m+[m[32m        )[m[41m[m
+lab/networks.py:655: trailing whitespace.
+[32m+[m[32m    except (OSError, subprocess.SubprocessError) as exc:[m[41m[m
+lab/networks.py:656: trailing whitespace.
+[32m+[m[32m        raise LabError(f"cannot enumerate project network: {exc}") from exc[m[41m[m
+lab/networks.py:663: trailing whitespace.
+[32m+[m[32m    if not re.fullmatch(r"[0-9a-f]{64}", network_id):[m[41m[m
+lab/networks.py:664: trailing whitespace.
+[32m+[m[32m        raise LabError("Docker returned a malformed full project network ID")[m[41m[m
+lab/networks.py:665: trailing whitespace.
+[32m+[m[32m    try:[m[41m[m
+lab/networks.py:666: trailing whitespace.
+[32m+[m[32m        inspected = subprocess.run([m[41m[m
+lab/networks.py:667: trailing whitespace.
+[32m+[m[32m            [[m[41m[m
+lab/networks.py:668: trailing whitespace.
+[32m+[m[32m                "docker", "network", "inspect", network_id,[m[41m[m
+lab/networks.py:669: trailing whitespace.
+[32m+[m[32m                "--format",[m[41m[m
+lab/networks.py:670: trailing whitespace.
+[32m+[m[32m                "{{json .}}",[m[41m[m
+lab/networks.py:671: trailing whitespace.
+[32m+[m[32m            ],[m[41m[m
+lab/networks.py:672: trailing whitespace.
+[32m+[m[32m            capture_output=True, text=True, check=False, timeout=20,[m[41m[m
+lab/networks.py:673: trailing whitespace.
+[32m+[m[32m        )[m[41m[m
+lab/networks.py:674: trailing whitespace.
+[32m+[m[32m    except (OSError, subprocess.SubprocessError) as exc:[m[41m[m
+lab/networks.py:675: trailing whitespace.
+[32m+[m[32m        raise LabError(f"cannot inspect project network: {exc}") from exc[m[41m[m
+lab/networks.py:682: trailing whitespace.
+[32m+[m[32m    if not isinstance(data, dict):[m[41m[m
+lab/networks.py:683: trailing whitespace.
+[32m+[m[32m        raise LabError("Docker returned an invalid project network inspection")[m[41m[m
+lab/networks.py:684: trailing whitespace.
+[32m+[m[32m    labels = data.get("Labels")[m[41m[m
+lab/networks.py:685: trailing whitespace.
+[32m+[m[32m    if not isinstance(labels, dict):[m[41m[m
+lab/networks.py:686: trailing whitespace.
+[32m+[m[32m        raise LabError("project network ownership labels are missing")[m[41m[m
+lab/networks.py:691: trailing whitespace.
+[32m+[m[32m    if labels.get("com.docker.compose.project") != project:[m[41m[m
+lab/networks.py:692: trailing whitespace.
+[32m+[m[32m        raise LabError("project network is missing its matching Compose project label")[m[41m[m
+lab/networks.py:693: trailing whitespace.
+[32m+[m[32m    if data.get("Internal") is not True or data.get("Driver") != "bridge":[m[41m[m
+lab/networks.py:694: trailing whitespace.
+[32m+[m[32m        raise LabError("project network is not an internal bridge")[m[41m[m
+lab/networks.py:695: trailing whitespace.
+[32m+[m[32m    network_name = data.get("Name")[m[41m[m
+lab/networks.py:696: trailing whitespace.
+[32m+[m[32m    if not isinstance(network_name, str) or not network_name:[m[41m[m
+lab/networks.py:697: trailing whitespace.
+[32m+[m[32m        raise LabError("project network name is missing")[m[41m[m
+lab/networks.py:698: trailing whitespace.
+[32m+[m[32m    if network_name in {"bridge", "host", "none"}:[m[41m[m
+lab/networks.py:699: trailing whitespace.
+[32m+[m[32m        raise LabError("refusing to enforce a default Docker network")[m[41m[m
+lab/networks.py:700: trailing whitespace.
+[32m+[m[32m    options = data.get("Options")[m[41m[m
+lab/networks.py:701: trailing whitespace.
+[32m+[m[32m    if not isinstance(options, dict):[m[41m[m
+lab/networks.py:702: trailing whitespace.
+[32m+[m[32m        options = {}[m[41m[m
+lab/networks.py:703: trailing whitespace.
+[32m+[m[32m    bridge = options.get("com.docker.network.bridge.name")[m[41m[m
+lab/networks.py:704: trailing whitespace.
+[32m+[m[32m    if not isinstance(bridge, str) or not bridge:[m[41m[m
+lab/networks.py:705: trailing whitespace.
+[32m+[m[32m        ipam = data.get("IPAM")[m[41m[m
+lab/networks.py:706: trailing whitespace.
+[32m+[m[32m        configs = ipam.get("Config") if isinstance(ipam, dict) else None[m[41m[m
+lab/networks.py:707: trailing whitespace.
+[32m+[m[32m        if not isinstance(configs, list):[m[41m[m
+lab/networks.py:708: trailing whitespace.
+[32m+[m[32m            raise LabError("project network IPAM configuration is missing")[m[41m[m
+lab/networks.py:709: trailing whitespace.
+[32m+[m[32m        try:[m[41m[m
+lab/networks.py:710: trailing whitespace.
+[32m+[m[32m            gateways = {[m[41m[m
+lab/networks.py:711: trailing whitespace.
+[32m+[m[32m                str(ipaddress.ip_address(config["Gateway"]))[m[41m[m
+lab/networks.py:712: trailing whitespace.
+[32m+[m[32m                for config in configs[m[41m[m
+lab/networks.py:713: trailing whitespace.
+[32m+[m[32m                if isinstance(config, dict) and config.get("Gateway")[m[41m[m
+lab/networks.py:714: trailing whitespace.
+[32m+[m[32m            }[m[41m[m
+lab/networks.py:715: trailing whitespace.
+[32m+[m[32m        except ValueError as exc:[m[41m[m
+lab/networks.py:716: trailing whitespace.
+[32m+[m[32m            raise LabError("project network has an invalid IPAM gateway") from exc[m[41m[m
+lab/networks.py:717: trailing whitespace.
+[32m+[m[32m        if not gateways:[m[41m[m
+lab/networks.py:718: trailing whitespace.
+[32m+[m[32m            raise LabError("project network has no resolvable Docker IPAM gateway")[m[41m[m
+lab/networks.py:719: trailing whitespace.
+[32m+[m[32m        try:[m[41m[m
+lab/networks.py:720: trailing whitespace.
+[32m+[m[32m            interfaces = subprocess.run([m[41m[m
+lab/networks.py:721: trailing whitespace.
+[32m+[m[32m                ["ip", "-j", "address", "show"],[m[41m[m
+lab/networks.py:722: trailing whitespace.
+[32m+[m[32m                capture_output=True, text=True, check=False, timeout=10,[m[41m[m
+lab/networks.py:723: trailing whitespace.
+[32m+[m[32m            )[m[41m[m
+lab/networks.py:724: trailing whitespace.
+[32m+[m[32m        except (OSError, subprocess.SubprocessError) as exc:[m[41m[m
+lab/networks.py:725: trailing whitespace.
+[32m+[m[32m            raise LabError(f"cannot resolve project bridge interface: {exc}") from exc[m[41m[m
+lab/networks.py:726: trailing whitespace.
+[32m+[m[32m        if interfaces.returncode != 0:[m[41m[m
+lab/networks.py:727: trailing whitespace.
+[32m+[m[32m            raise LabError([m[41m[m
+lab/networks.py:728: trailing whitespace.
+[32m+[m[32m                "cannot resolve project bridge interface: "[m[41m[m
+lab/networks.py:729: trailing whitespace.
+[32m+[m[32m                + (interfaces.stderr.strip() or f"exit {interfaces.returncode}")[m[41m[m
+lab/networks.py:730: trailing whitespace.
+[32m+[m[32m            )[m[41m[m
+lab/networks.py:731: trailing whitespace.
+[32m+[m[32m        try:[m[41m[m
+lab/networks.py:732: trailing whitespace.
+[32m+[m[32m            interface_data = json.loads(interfaces.stdout)[m[41m[m
+lab/networks.py:733: trailing whitespace.
+[32m+[m[32m        except ValueError as exc:[m[41m[m
+lab/networks.py:734: trailing whitespace.
+[32m+[m[32m            raise LabError("ip returned invalid interface inspection JSON") from exc[m[41m[m
+lab/networks.py:735: trailing whitespace.
+[32m+[m[32m        if not isinstance(interface_data, list):[m[41m[m
+lab/networks.py:736: trailing whitespace.
+[32m+[m[32m            raise LabError("ip returned invalid interface inspection JSON")[m[41m[m
+lab/networks.py:737: trailing whitespace.
+[32m+[m[32m        matches = [[m[41m[m
+lab/networks.py:738: trailing whitespace.
+[32m+[m[32m            interface.get("ifname")[m[41m[m
+lab/networks.py:739: trailing whitespace.
+[32m+[m[32m            for interface in interface_data[m[41m[m
+lab/networks.py:740: trailing whitespace.
+[32m+[m[32m            if isinstance(interface, dict)[m[41m[m
+lab/networks.py:741: trailing whitespace.
+[32m+[m[32m            and gateways.issubset({[m[41m[m
+lab/networks.py:742: trailing whitespace.
+[32m+[m[32m                address.get("local")[m[41m[m
+lab/networks.py:743: trailing whitespace.
+[32m+[m[32m                for address in interface.get("addr_info", [])[m[41m[m
+lab/networks.py:744: trailing whitespace.
+[32m+[m[32m                if isinstance(address, dict) and address.get("family") == "inet"[m[41m[m
+lab/networks.py:745: trailing whitespace.
+[32m+[m[32m            })[m[41m[m
+lab/networks.py:746: trailing whitespace.
+[32m+[m[32m        ][m[41m[m
+lab/networks.py:747: trailing whitespace.
+[32m+[m[32m        if len(matches) != 1 or not isinstance(matches[0], str):[m[41m[m
+lab/networks.py:748: trailing whitespace.
+[32m+[m[32m            raise LabError([m[41m[m
+lab/networks.py:749: trailing whitespace.
+[32m+[m[32m                "expected exactly one bridge matching Docker IPAM gateways; "[m[41m[m
+lab/networks.py:750: trailing whitespace.
+[32m+[m[32m                f"found {len(matches)}"[m[41m[m
+lab/networks.py:751: trailing whitespace.
+[32m+[m[32m            )[m[41m[m
+lab/networks.py:752: trailing whitespace.
+[32m+[m[32m        bridge = matches[0][m[41m[m
+lab/networks.py:755: trailing whitespace.
+[32m+[m[32m        "name": network_name,[m[41m[m
+lab/networks.py:762: trailing whitespace.
+[32m+[m[32m        "bridge": bridge,[m[41m[m
+lab/networks.py:813: trailing whitespace.
+[32m+[m[32mdef resolve_project_network_policy([m[41m[m
+lab/networks.py:814: trailing whitespace.
+[32m+[m[32m    root: Path,[m[41m[m
+lab/networks.py:815: trailing whitespace.
+[32m+[m[32m    project: str,[m[41m[m
+lab/networks.py:816: trailing whitespace.
+[32m+[m[32m    profile: str | None = None,[m[41m[m
+lab/networks.py:817: trailing whitespace.
+[32m+[m[32m) -> dict[str, Any]:[m[41m[m
+lab/networks.py:818: trailing whitespace.
+[32m+[m[32m    if not re.fullmatch(r"sec-lab-i-[a-z0-9][a-z0-9-]{0,31}", project):[m[41m[m
+lab/networks.py:819: trailing whitespace.
+[32m+[m[32m        raise LabError("invalid investigation project")[m[41m[m
+lab/networks.py:820: trailing whitespace.
+[32m+[m[32m    pinned_path = root / "state" / "runtime" / f"{project}-network-policy.json"[m[41m[m
+lab/networks.py:821: trailing whitespace.
+[32m+[m[32m    if not pinned_path.is_file():[m[41m[m
+lab/networks.py:822: trailing whitespace.
+[32m+[m[32m        return resolve_network_policy(root, profile)[m[41m[m
+lab/networks.py:823: trailing whitespace.
+[32m+[m[32m    try:[m[41m[m
+lab/networks.py:824: trailing whitespace.
+[32m+[m[32m        pinned = json.loads(pinned_path.read_text(encoding="utf-8"))[m[41m[m
+lab/networks.py:825: trailing whitespace.
+[32m+[m[32m    except (OSError, ValueError) as exc:[m[41m[m
+lab/networks.py:826: trailing whitespace.
+[32m+[m[32m        raise LabError(f"cannot read pinned project network policy: {pinned_path}") from exc[m[41m[m
+lab/networks.py:827: trailing whitespace.
+[32m+[m[32m    validate_policy(pinned, "pinned project network policy")[m[41m[m
+lab/networks.py:828: trailing whitespace.
+[32m+[m[32m    if profile is not None and pinned["profile"] != profile:[m[41m[m
+lab/networks.py:829: trailing whitespace.
+[32m+[m[32m        raise LabError([m[41m[m
+lab/networks.py:830: trailing whitespace.
+[32m+[m[32m            f"requested profile {profile} does not match the project's pinned "[m[41m[m
+lab/networks.py:831

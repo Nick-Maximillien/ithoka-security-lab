@@ -32,6 +32,8 @@ disposable, ownership-scoped environment.
   delegation; it has no Docker or shell execution access.
 - [`lab/catalog/capabilities.yaml`](lab/catalog/capabilities.yaml) — approved
   reusable capability interfaces.
+- [`lab/catalog/materials.yaml`](lab/catalog/materials.yaml) — explicitly
+  approved experiment resources and artifacts; an empty catalog is valid.
 
 ## Quick start
 
@@ -40,6 +42,7 @@ cd /home/maximillien/security-lab
 cp config/lab.env.example config/lab.env
 python3 lab/lab.py status
 python3 lab/lab.py capabilities --json
+python3 lab/lab.py materials
 ./scripts/preflight.sh
 ```
 
@@ -48,9 +51,10 @@ environment without changing it:
 
 ```bash
 python3 lab/lab.py networks discover
-python3 lab/lab.py networks configure
-# Edit operator_confirmed in config/networks/machine.yaml.
+# Run `networks configure` only if machine.yaml is missing; otherwise review it.
 python3 lab/lab.py networks validate-config
+sudo -v
+python3 lab/lab.py networks preflight
 python3 lab/lab.py networks plan --profile isolated \
   --output state/network-plans/isolated.json
 ```
@@ -58,40 +62,63 @@ python3 lab/lab.py networks plan --profile isolated \
 The machine file must contain the operator-confirmed Docker context and, where
 used, the approved lab interfaces and Docker networks. It must not contain
 invented interface names, addresses, gateways, or host firewall claims.
-Review the generated plan before an explicitly authorized scoped operation:
+The preflight is a read-only check of the approved Docker context, default
+network inventory, firewall command backends, and root-readable IPv4/IPv6
+rules. It does not install rules or alter any Docker resource. The network plan
+is read-only and reports whether the selected policy is supported. It is not
+proof of live enforcement. A project-owned Docker network does not exist until
+its investigation is constructed from a researcher-supplied specification.
+`networks apply` requires that existing owned network and never creates it.
+Construction creates the Compose network, applies and verifies the boundary,
+and only then starts workloads.
 
-```bash
-python3 lab/lab.py networks apply sec-lab-i-local-study-01 \
-  --profile isolated --authorize "reviewed local boundary plan"
-python3 lab/lab.py networks verify sec-lab-i-local-study-01 \
-  --profile isolated
-python3 lab/lab.py networks test sec-lab-i-local-study-01 \
-  --profile isolated \
-  --authorize "approved local network acceptance"
-```
-
-Apply and verify require the intended Linux/WSL environment, Docker network
-ownership, `sudo`, `iptables`, and `ip6tables`; they do not alter Windows
-Firewall, routes, unrelated networks, or global firewall tables.
-
-The supported adapter currently verifies project-scoped deny-mode IPv4 and
-IPv6 bridge rules. `controlled-access` restricted rules, Windows Firewall,
-upstream VPN/routing controls, and temporary maintenance access are not
-implemented as verified capabilities and fail closed.
-
-`networks test` verifies the already-applied owned boundary and inspects the
-owned Docker network. It does not create disposable containers or probe
-arbitrary external targets. Workload-specific connectivity tests belong in the
-researcher-defined investigation and must be recorded as evidence.
-
-Then submit a researcher-defined specification:
+The current supplied profiles remain unsupported for readiness because Windows
+host isolation, dedicated DNS/proxy controls, and live runtime acceptance are
+not implemented. The Linux adapter now uses owned IPv4/IPv6 chains ahead of
+host and forwarding rules for the project bridge, but this structural
+verification is not packet-level acceptance. Do not proceed to construction
+unless the reviewed investigation policy only requests capabilities the plan
+reports as supported. Disabling a boundary is an explicit reduction in
+protection, not a claim that the adapter enforces it.
 
 ```bash
 python3 lab/lab.py validate-investigation path/to/investigation.yaml
 python3 lab/lab.py plan path/to/investigation.yaml \
   --investigation-id local-study-01 \
   --output state/plans/local-study-01.json
+# Continue only if the plan reports network_policy_supported: true.
+export REQUIRE_RUNTIME_APPROVAL=true
+python3 lab/lab.py construct-investigation path/to/investigation.yaml \
+  --investigation-id local-study-01 \
+  --authorize "approved local construction after plan review"
+python3 lab/lab.py networks verify sec-lab-i-local-study-01 --profile isolated
+python3 lab/lab.py networks test sec-lab-i-local-study-01 --profile isolated \
+  --authorize "approved local network acceptance"
 ```
+
+Set `REQUIRE_RUNTIME_APPROVAL=true` in `config/lab.env` as well as the current
+shell before construction. The specification's selected network profile must
+match the profile used for later verification. Review the construction plan's
+`network_policy_supported` field before proceeding. The currently supplied
+profiles enable Windows-host, DNS, and proxy boundaries that the adapter
+cannot enforce as distinct controls and require external runtime acceptance
+that the adapter does not perform; the plan reports them as unsupported and
+construction fails closed while they remain required. Do not
+disable them unless the experiment explicitly does not require those guarantees;
+doing so does not provide Windows-host, DNS, or proxy isolation. The adapter
+does not control Windows Firewall, routes, unrelated networks, or global
+firewall tables.
+
+The adapter creates project-owned IPv4/IPv6 chains and checks their ordering in
+the host `INPUT`, `OUTPUT`, and `FORWARD` paths. `controlled-access` restricted
+rules, Windows Firewall, upstream VPN/routing controls, DNS/proxy-specific
+enforcement, live acceptance, capture, and temporary maintenance access are
+not implemented as verified capabilities and fail closed when required.
+
+`networks test` verifies the already-applied owned boundary and inspects the
+owned Docker network. It reports inconclusive and exits unsuccessfully because
+the repository does not yet have a bounded live acceptance runner. Structural
+firewall checks and unit tests do not establish actual packet blocking.
 
 For command-driven technical work, initialize a disposable workspace without
 any predefined workload:
@@ -130,16 +157,6 @@ The runner uses no network, no host mounts, a read-only root, dropped
 capabilities, `no-new-privileges`, and CPU/memory/PID limits. Output and the
 command are recorded under the experiment's `records/` directory. Image
 availability and provenance must be separately approved.
-
-Construction requires explicit authorization and
-`REQUIRE_RUNTIME_APPROVAL=true`:
-
-```bash
-export REQUIRE_RUNTIME_APPROVAL=true
-python3 lab/lab.py construct-investigation path/to/investigation.yaml \
-  --investigation-id local-study-01 \
-  --authorize "approved local construction after plan review"
-```
 
 Dispose only the owned investigation project:
 

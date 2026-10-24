@@ -1,7 +1,12 @@
+
 schema_version: 1
+
+# Experiment-level safety policy.
+# These are hard restrictions, not permissions to bypass network boundaries.
 allowed_permissions:
   - network.internal
+
 network_egress: false
+
 host_mounts: []
 privileges: []
-max_active_instances: 1

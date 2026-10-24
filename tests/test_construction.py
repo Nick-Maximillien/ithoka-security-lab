@@ -11,6 +11,7 @@ import yaml
 import lab
 from lab.evidence import archive_evidence
 from lab.foundation import LabError
+from lab.networks import policy_json, resolve_network_policy
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,8 +60,16 @@ networks:
                     "backend": "docker.compose",
                     "compose_file": "compose/research.yaml",
                     "network": {"logical_name": "investigation"},
+                    "network_policy": {
+                        "profile": "isolated",
+                        "overrides": {
+                            "windows_host": {"enabled": False},
+                            "dns": {"enabled": False},
+                            "proxies": {"enabled": False},
+                        },
+                    },
                 },
-                "resources": [{"id": "compose", "kind": "docker.compose"}],
+                "resources": [],
                 "procedure": [{"id": "construct", "operation": "construct"}],
                 "observations": {},
                 "evaluation": {},
@@ -82,10 +91,40 @@ networks:
         self.assertEqual(specification["apparatus"]["backend"], "docker.compose")
 
     def test_plan_resolves_resources_and_records_integrity(self):
+        material_id = "alpine-runtime"
+        image = "alpine:3.20"
+        catalog_path = self.root / "lab" / "catalog" / "materials.yaml"
+        catalog_path.write_text(yaml.safe_dump({
+            "schema_version": 1,
+            "materials": [{
+                "id": material_id,
+                "revision": "3.20.0",
+                "kind": "container-image",
+                "availability": "available",
+                "image": image,
+                "source": "operator-approved local image",
+            }],
+        }), encoding="utf-8")
+        specification = yaml.safe_load(self.spec.read_text(encoding="utf-8"))
+        specification["resources"] = [{
+            "id": "runtime-image",
+            "kind": "container-image",
+            "material_id": material_id,
+        }]
+        self.spec.write_text(
+            yaml.safe_dump(specification, sort_keys=False),
+            encoding="utf-8",
+        )
         plan = lab.build_construction_plan(self.spec, "investigation-one", self.root)
         self.assertEqual(plan["ownership"]["investigation"], "investigation-one")
-        self.assertEqual(plan["resources"][0]["status"], "approved-lab-resource")
+        self.assertEqual(plan["resources"][0]["status"], "approved-material")
+        self.assertEqual(plan["resources"][0]["material_id"], material_id)
         self.assertEqual(len(plan["specification_sha256"]), 64)
+        self.assertFalse(plan["network_policy_supported"])
+        self.assertIn(
+            "external_networks=runtime-acceptance-unavailable",
+            plan["network_policy_capability_error"],
+        )
 
     def test_unsupported_procedure_fails_closed(self):
         document = yaml.safe_load(self.spec.read_text(encoding="utf-8"))
@@ -120,6 +159,20 @@ networks:
             stdout = "tool output\n"
             stderr = ""
 
+        (self.root / "lab" / "catalog" / "materials.yaml").write_text(
+            yaml.safe_dump({
+                "schema_version": 1,
+                "materials": [{
+                    "id": "approved-tool",
+                    "revision": "1.0.0",
+                    "kind": "container-image",
+                    "availability": "available",
+                    "image": "approved/tool:1",
+                    "source": "unit test fixture",
+                }],
+            }),
+            encoding="utf-8",
+        )
         with patch("lab.workspace.subprocess.run", return_value=Result()) as runner:
             record = lab.execute_tool("tool-one", "approved/tool:1", ["sh", "-c", "echo tool"], self.root)
         command = runner.call_args.args[0]
@@ -151,6 +204,27 @@ networks:
                 lab.validate_investigation(self.spec, self.root)
         compose.write_text(original, encoding="utf-8")
 
+    def test_host_mounts_docker_socket_privilege_and_capabilities_are_rejected(self):
+        compose = self.root / "compose" / "research.yaml"
+        original = yaml.safe_load(compose.read_text(encoding="utf-8"))
+        unsafe_services = (
+            ({"volumes": ["/tmp:/host"]}, "forbidden Compose options: volumes"),
+            (
+                {"volumes": ["/var/run/docker.sock:/var/run/docker.sock"]},
+                "forbidden Compose options: volumes",
+            ),
+            ({"privileged": True}, "forbidden Compose options: privileged"),
+            ({"cap_add": ["NET_ADMIN"]}, "forbidden Compose options: cap_add"),
+        )
+        for unsafe, message in unsafe_services:
+            with self.subTest(unsafe=unsafe):
+                document = yaml.safe_load(yaml.safe_dump(original))
+                document["services"]["target"].update(unsafe)
+                compose.write_text(yaml.safe_dump(document), encoding="utf-8")
+                with self.assertRaisesRegex(LabError, message):
+                    lab.validate_investigation(self.spec, self.root)
+        compose.write_text(yaml.safe_dump(original), encoding="utf-8")
+
     def test_network_boundary_is_applied_and_verified_before_start(self):
         calls = []
 
@@ -158,7 +232,10 @@ networks:
             calls.append(command)
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}):
+        with (
+            patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}),
+            patch("lab.construction.validate_runtime_support"),
+        ):
             plan = lab.construct_investigation(
                 self.spec, "boundary-one", "reviewed", self.root, runner=runner
             )
@@ -170,6 +247,28 @@ networks:
         start_index = next(index for index, command in enumerate(calls) if command[-1:] == ["start"])
         self.assertLess(create_index, apply_index)
         self.assertLess(apply_index, start_index)
+        pinned = self.root / "state" / "runtime" / "sec-lab-i-boundary-one-network-policy.json"
+        self.assertTrue(pinned.is_file())
+        self.assertEqual(json.loads(pinned.read_text(encoding="utf-8"))["profile"], "isolated")
+
+    def test_boundary_adapter_scopes_rules_and_saves_cleanup_identity_first(self):
+        script = (self.root / "scripts" / "network-boundary.sh").read_text(
+            encoding="utf-8"
+        )
+        apply_block = script.split("    apply)\n", 1)[1].split("    verify)\n", 1)[0]
+
+        self.assertIn('--filter "label=com.docker.compose.project=$PROJECT"', script)
+        self.assertIn('ensure_jump iptables FORWARD "$CHAIN4"', script)
+        self.assertIn('ensure_jump ip6tables FORWARD "$CHAIN6"', script)
+        self.assertIn('ensure_external_jump iptables "$EXT_CHAIN4"', script)
+        self.assertIn('ensure_external_jump ip6tables "$EXT_CHAIN6"', script)
+        self.assertIn('ensure_owned_chain iptables "$CHAIN4"', script)
+        self.assertIn('ensure_owned_chain ip6tables "$CHAIN6"', script)
+        self.assertLess(apply_block.index("printf 'PROJECT="), apply_block.index("apply_rules"))
+        self.assertLess(apply_block.index("apply_rules"), apply_block.index("verify_rules"))
+        self.assertNotIn("iptables -F", script)
+        self.assertNotIn("ip6tables -F", script)
+        self.assertNotIn("docker network create", script)
 
     def test_services_do_not_start_when_boundary_verification_fails(self):
         calls = []
@@ -180,12 +279,109 @@ networks:
                 return SimpleNamespace(returncode=1, stdout="", stderr="rule missing")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}):
+        with (
+            patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}),
+            patch("lab.construction.validate_runtime_support"),
+        ):
             with self.assertRaisesRegex(LabError, "network-boundary verify failed"):
                 lab.construct_investigation(
                     self.spec, "boundary-two", "reviewed", self.root, runner=runner
                 )
         self.assertFalse(any(command[-1:] == ["start"] for command in calls))
+
+    def test_services_do_not_start_when_boundary_application_fails(self):
+        calls = []
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            if command[:2] == ["bash", str(self.root / "scripts" / "network-boundary.sh")] and command[2] == "apply":
+                return SimpleNamespace(returncode=1, stdout="", stderr="unsupported policy")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with (
+            patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}),
+            patch("lab.construction.validate_runtime_support"),
+        ):
+            with self.assertRaisesRegex(LabError, "network-boundary apply failed"):
+                lab.construct_investigation(
+                    self.spec, "boundary-apply-failure", "reviewed", self.root, runner=runner
+                )
+        self.assertFalse(any(command[-1:] == ["start"] for command in calls))
+
+    def test_unsupported_required_boundary_fails_before_compose_creation(self):
+        document = yaml.safe_load(self.spec.read_text(encoding="utf-8"))
+        document["apparatus"]["network_policy"]["overrides"]["windows_host"]["enabled"] = True
+        self.spec.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+        plan = lab.build_construction_plan(self.spec, "unsupported-boundary", self.root)
+        self.assertFalse(plan["network_policy_supported"])
+        self.assertIn("windows_host=windows-firewall-required", plan["network_policy_capability_error"])
+        calls = []
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}):
+            with self.assertRaisesRegex(LabError, "windows_host=windows-firewall-required"):
+                lab.construct_investigation(
+                    self.spec, "unsupported-boundary", "reviewed", self.root, runner=runner
+                )
+        self.assertFalse(any("create" in command for command in calls))
+        self.assertFalse(any(command[-1:] == ["start"] for command in calls))
+
+    def test_disposal_refuses_project_resources_with_mismatched_ownership(self):
+        calls = []
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            if command[:3] == ["docker", "ps", "-aq"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:4] == ["docker", "network", "ls", "-q"]:
+                return SimpleNamespace(returncode=0, stdout="network-id\n", stderr="")
+            if command[:3] == ["docker", "network", "inspect"]:
+                return SimpleNamespace(returncode=0, stdout="security-lab|another-study", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with self.assertRaisesRegex(LabError, "not verified as owned"):
+            lab.dispose_investigation(
+                self.spec, "disposal-owner-check", self.root, runner=runner
+            )
+        self.assertFalse(any("down" in command for command in calls))
+        self.assertFalse(any("network-boundary.sh" in " ".join(command) for command in calls))
+
+    def test_disposal_removes_pinned_policy_only_after_owned_cleanup(self):
+        project = "sec-lab-i-disposal-owner-check"
+        pinned = self.root / "state" / "runtime" / f"{project}-network-policy.json"
+        pinned.parent.mkdir(parents=True, exist_ok=True)
+        pinned.write_text(
+            policy_json(resolve_network_policy(self.root, "isolated", {
+                "windows_host": {"enabled": False},
+                "dns": {"enabled": False},
+                "proxies": {"enabled": False},
+            })),
+            encoding="utf-8",
+        )
+        calls = []
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            if command[:3] == ["docker", "ps", "-aq"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:4] == ["docker", "network", "ls", "-q"]:
+                return SimpleNamespace(returncode=0, stdout="network-id\n", stderr="")
+            if command[:3] == ["docker", "network", "inspect"]:
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout="security-lab|disposal-owner-check",
+                    stderr="",
+                )
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        lab.dispose_investigation(
+            self.spec, "disposal-owner-check", self.root, runner=runner
+        )
+        self.assertFalse(pinned.exists())
+        self.assertTrue(any(command[-2:] == ["down", "--remove-orphans"] for command in calls))
 
     def test_malformed_open_section_fails_with_lab_error(self):
         document = yaml.safe_load(self.spec.read_text(encoding="utf-8"))

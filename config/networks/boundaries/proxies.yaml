@@ -1,5 +1,7 @@
+
 version: 1
 boundary: proxies
+
 settings:
   enabled: true
   mode: deny
@@ -7,7 +9,15 @@ settings:
   scope: application-and-network
   rules: []
   exceptions: []
-  verification: [environment_review, runtime_acceptance]
+  verification:
+    - environment_review
+    - runtime_acceptance
   adapter: linux-wsl
-  description: Application proxy variables and proxy endpoints
-  reason: Proxy configuration must not bypass network policy
+  description: >-
+    Controls application proxy variables, proxy configuration, and
+    outbound connections to proxy endpoints that could route traffic
+    outside the intended network policy.
+  reason: >-
+    Proxy configuration must not bypass network policy. Proxy use and
+    proxy endpoint access remain denied unless explicitly authorized
+    through validated rules or exceptions.

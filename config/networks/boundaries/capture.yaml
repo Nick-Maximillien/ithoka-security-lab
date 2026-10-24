@@ -1,3 +1,4 @@
+
 version: 1
 boundary: capture
 settings:
@@ -7,7 +8,9 @@ settings:
   scope: approved-interface
   rules: []
   exceptions: []
-  verification: [capture_tool, evidence_review]
+  verification:
+    - capture_tool
+    - evidence_review
   adapter: local-evidence
-  description: Optional packet capture and monitoring
+  description: Optional packet capture for observation and monitoring; does not enforce network isolation
   reason: Capture is observation, not proof of isolation

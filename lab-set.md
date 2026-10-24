@@ -17,9 +17,11 @@ python3 lab/lab.py status
 python3 lab/lab.py capabilities --json
 ./scripts/preflight.sh
 python3 lab/lab.py networks discover
-python3 lab/lab.py networks configure
+# Run `networks configure` only if machine.yaml is missing.
 # Review operator_confirmed values, then:
 python3 lab/lab.py networks validate-config
+sudo -v
+python3 lab/lab.py networks preflight
 python3 lab/lab.py networks plan --profile isolated \
   --output state/network-plans/isolated.json
 ```
@@ -29,7 +31,11 @@ capacity, and persistent lab paths. It does not validate or construct an
 investigation. `networks discover` is read-only. `machine.yaml` is the
 operator-confirmed host-specific configuration and must not contain guessed
 interfaces, addresses, gateways, or Docker network IDs. Docker images are not
-pulled automatically.
+pulled automatically. The supplied profile plan currently reports
+`supported: false` because it requires Windows-host, DNS, proxy, and external
+runtime-acceptance controls that are not implemented. Do not construct an
+experiment until its reviewed effective policy reports supported; disabling
+those controls means those guarantees are not provided.
 
 ## 2. Initialize a command-driven experiment
 
@@ -109,13 +115,12 @@ acceptance activities.
 
 ## 6. Network boundary apply and verification
 
-For a reviewed, owned project network, explicitly apply and verify the
-supported deny-mode boundary:
+Construction applies and verifies the required boundary after creating the
+project network and before workload startup. A separate apply is not a setup
+step and is only valid for an existing, uniquely owned project network. For
+normal operation, inspect the boundary after construction:
 
 ```bash
-python3 lab/lab.py networks apply sec-lab-i-local-study-01 \
-  --profile isolated \
-  --authorize "reviewed local boundary plan"
 python3 lab/lab.py networks verify sec-lab-i-local-study-01 \
   --profile isolated
 python3 lab/lab.py networks test sec-lab-i-local-study-01 \
@@ -126,8 +131,11 @@ python3 lab/lab.py networks test sec-lab-i-local-study-01 \
 The adapter requires Docker, `sudo`, `iptables`, and `ip6tables`, and records
 the owned network identity under `state/network-boundary`. It does not modify
 Windows Firewall, host routes, VPN settings, unrelated networks, or global
-firewall tables. `controlled-access` and temporary maintenance operations are
-rejected until their semantics can be applied and verified.
+firewall tables. The supplied profiles currently require unsupported
+Windows-host, DNS, and proxy capabilities; construction fails closed until
+those requirements are resolved. `controlled-access`, capture, and temporary
+maintenance operations are also rejected until their semantics can be applied
+and verified.
 
 ## 7. Operate, observe, and preserve evidence
 

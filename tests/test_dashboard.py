@@ -26,6 +26,7 @@ class DashboardReadModelTests(unittest.TestCase):
         overview = lab_overview(self.root)
         self.assertEqual(overview["configuration"], "investigation-independent")
         self.assertIn("docker.compose", overview["capabilities"])
+        self.assertEqual(overview["materials"], [])
 
     def test_workspace_and_records_are_readable(self):
         init_experiment("dashboard-one", self.root)
