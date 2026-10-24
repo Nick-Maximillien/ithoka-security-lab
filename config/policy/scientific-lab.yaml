@@ -1,0 +1,7 @@
+schema_version: 1
+allowed_permissions:
+  - network.internal
+network_egress: false
+host_mounts: []
+privileges: []
+max_active_instances: 1

@@ -1,0 +1,13 @@
+version: 1
+boundary: ipv4
+settings:
+  enabled: true
+  mode: deny
+  direction: bidirectional
+  scope: investigation-bridge
+  rules: []
+  exceptions: []
+  verification: [iptables]
+  adapter: linux-wsl
+  description: IPv4 traffic boundary
+  reason: IPv4 is independently configurable from IPv6

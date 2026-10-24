@@ -1,0 +1,79 @@
+# Local configuration and credentials
+config/lab.env
+config/lab.env.*
+!config/lab.env.example
+config/networks/machine.yaml
+*.env
+*.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.der
+*.crt
+*.cer
+*.token
+*.secret
+*.credentials
+*credentials*
+*secrets*
+
+# Generated runtime state, logs, captures, evidence, and archives
+state/*
+!state/.gitkeep
+logs/*
+!logs/.gitkeep
+runtime/
+work/*
+!work/.gitkeep
+evidence/
+evidence-staging/*
+!evidence-staging/.gitkeep
+archives/
+*.pcap
+*.pcapng
+*.pcap.gz
+*.har
+
+# Private checkpoints and local snapshots
+records/
+checkpoints/
+*.bak
+*.backup
+
+# Python and test tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Windows metadata and editor-local files
+*:Zone.Identifier
+*.Zone.Identifier
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local machine and OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+# Private environment files and backups
+config/lab.env
+config/lab.env.*
+!config/lab.env.example
+!config/lab.env.*.example
+
+# Private research checkpoints and machine-specific records
+records/checkpoints/
+config/networks/machine.yaml
+
+# Local Windows metadata
+*:Zone.Identifier

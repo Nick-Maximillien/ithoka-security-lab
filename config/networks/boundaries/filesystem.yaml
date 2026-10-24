@@ -1,0 +1,13 @@
+version: 1
+boundary: filesystem
+settings:
+  enabled: true
+  mode: deny
+  direction: not_applicable
+  scope: host-filesystem-and-docker-socket
+  rules: []
+  exceptions: []
+  verification: [compose_inspection]
+  adapter: docker-compose
+  description: Host bind mounts, Docker socket, and controlled file transfer
+  reason: Host filesystem exposure is a controller-integrity boundary

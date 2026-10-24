@@ -1,0 +1,13 @@
+version: 1
+boundary: windows_host
+settings:
+  enabled: true
+  mode: deny
+  direction: bidirectional
+  scope: linux-wsl-host
+  rules: []
+  exceptions: []
+  verification: [linux_rules, windows_firewall_required]
+  adapter: linux-wsl
+  description: Traffic between research workloads and the Windows or WSL host
+  reason: Linux-side controls cannot prove Windows-side isolation

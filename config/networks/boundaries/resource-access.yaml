@@ -1,0 +1,13 @@
+version: 1
+boundary: resource_access
+settings:
+  enabled: true
+  mode: deny
+  direction: not_applicable
+  scope: privileged-and-control-plane-resources
+  rules: []
+  exceptions: []
+  verification: [compose_inspection]
+  adapter: docker-compose
+  description: Privileged operations, capabilities, Docker socket, and control-plane access
+  reason: Fixed safeguards cannot be disabled by policy

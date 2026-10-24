@@ -1,0 +1,6 @@
+id: EXP-9999-invalid
+version: 1.0
+title: Invalid mode fixture
+question: This must be rejected by experiment validation.
+compose_file: compose/compose.yaml
+execution_mode: unsafe-mode

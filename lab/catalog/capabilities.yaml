@@ -1,0 +1,48 @@
+schema_version: 1
+capabilities:
+  - id: docker.compose
+    revision: "1.0.0"
+    adapter: docker-compose
+    availability: available
+    operations:
+      - construct
+      - run_service
+      - collect_logs
+      - stop
+      - destroy
+    permissions:
+      - network.internal
+    validation: compose-internal-no-host-access
+  - id: compose.policy
+    revision: "1.0.0"
+    adapter: static-compose
+    availability: available
+    operations:
+      - validate_plan
+    permissions:
+      - network.internal
+    validation: compose-internal-no-host-access
+  - id: workspace.filesystem
+    revision: "1.0.0"
+    adapter: researcher-workspace
+    availability: available
+    operations:
+      - initialize
+      - enter
+      - inspect
+      - reset
+      - destroy
+    permissions:
+      - experiment.workspace
+    validation: ownership-scoped-workspace
+  - id: evidence.capture
+    revision: "1.0.0"
+    adapter: local-evidence
+    availability: available
+    operations:
+      - collect
+      - hash
+      - export
+    permissions:
+      - evidence.staging
+    validation: integrity-verified-export

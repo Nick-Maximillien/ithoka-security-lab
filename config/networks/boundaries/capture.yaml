@@ -1,0 +1,13 @@
+version: 1
+boundary: capture
+settings:
+  enabled: false
+  mode: monitor
+  direction: not_applicable
+  scope: approved-interface
+  rules: []
+  exceptions: []
+  verification: [capture_tool, evidence_review]
+  adapter: local-evidence
+  description: Optional packet capture and monitoring
+  reason: Capture is observation, not proof of isolation

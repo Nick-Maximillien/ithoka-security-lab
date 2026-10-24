@@ -1,0 +1,15 @@
+version: 1
+profile: controlled-access
+boundaries:
+  lab_ingress: {source: lab-ingress.yaml, overrides: {mode: restricted}}
+  lab_egress: {source: lab-egress.yaml, overrides: {mode: restricted}}
+  windows_host: {source: windows-host.yaml, overrides: {}}
+  external_networks: {source: external-networks.yaml, overrides: {mode: restricted}}
+  dns: {source: dns.yaml, overrides: {mode: restricted}}
+  proxies: {source: proxies.yaml, overrides: {mode: restricted}}
+  ipv4: {source: ipv4.yaml, overrides: {mode: restricted}}
+  ipv6: {source: ipv6.yaml, overrides: {mode: restricted}}
+  docker_networks: {source: docker-networks.yaml, overrides: {}}
+  filesystem: {source: filesystem.yaml, overrides: {}}
+  capture: {source: capture.yaml, overrides: {}}
+  resource_access: {source: resource-access.yaml, overrides: {}}

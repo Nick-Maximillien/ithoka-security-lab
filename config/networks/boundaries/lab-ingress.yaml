@@ -1,0 +1,13 @@
+version: 1
+boundary: lab_ingress
+settings:
+  enabled: true
+  mode: deny
+  direction: inbound
+  scope: investigation-network
+  rules: []
+  exceptions: []
+  verification: [iptables, ip6tables]
+  adapter: linux-wsl
+  description: Inbound traffic entering the investigation network
+  reason: Prevent unsolicited access to research services

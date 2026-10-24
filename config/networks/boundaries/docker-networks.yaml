@@ -1,0 +1,13 @@
+version: 1
+boundary: docker_networks
+settings:
+  enabled: true
+  mode: deny
+  direction: bidirectional
+  scope: other-docker-networks
+  rules: []
+  exceptions: []
+  verification: [network_inspection]
+  adapter: docker-compose
+  description: Investigation, host, and unrelated Docker network topology
+  reason: Cross-project communication must be explicitly controlled

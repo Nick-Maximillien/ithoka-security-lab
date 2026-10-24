@@ -1,0 +1,13 @@
+version: 1
+boundary: dns
+settings:
+  enabled: true
+  mode: deny
+  direction: outbound
+  scope: resolver
+  rules: []
+  exceptions: []
+  verification: [resolver_configuration, runtime_acceptance]
+  adapter: linux-wsl
+  description: DNS resolver access and alternate DNS paths
+  reason: Resolver configuration alone does not prove DNS enforcement

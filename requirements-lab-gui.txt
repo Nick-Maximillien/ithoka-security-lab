@@ -1,0 +1,2 @@
+# Optional local-only presentation layer.
+streamlit==1.39.0

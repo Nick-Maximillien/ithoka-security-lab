@@ -1,0 +1,20 @@
+version: 1
+
+# Copy this file to machine.yaml only after reviewing `networks discover`.
+# Values in this file are operator approvals, not universal defaults.
+discovered:
+  generated_by: "python3 lab/lab.py networks discover"
+  review_required: true
+
+operator_confirmed:
+  # Confirm with `docker context show`; do not change the Docker context here.
+  approved_docker_context: "REPLACE_WITH_CONFIRMED_CONTEXT"
+  # List only lab-owned interfaces and Docker networks approved for enforcement.
+  approved_interfaces: []
+  approved_networks: []
+
+derived: {}
+
+unsupported:
+  windows_firewall: "not controlled by the WSL adapter"
+  upstream_vpn_routing: "not controlled or verified by the lab"

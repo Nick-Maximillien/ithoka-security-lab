@@ -1,0 +1,10 @@
+version: 0.1.0
+purpose: persistent lab policy baseline
+policy:
+  host_network: false
+  privileged: false
+  docker_socket_mount: false
+  broad_host_mount: false
+  external_network: false
+  writable_state: []
+runtime_digest_status: recorded-per-investigation

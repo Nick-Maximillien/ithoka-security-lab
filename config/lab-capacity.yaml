@@ -1,0 +1,8 @@
+# Conservative lab admission ceilings, not a measurement of host capacity.
+# Reassess only after recording the actual WSL/Windows idle baseline.
+max_active_instances: 1
+memory_mib: 512
+cpu_millicores: 1000
+pids: 256
+storage_mib: 512
+max_duration_seconds: 3600
