@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -12,7 +11,8 @@ require_lab_config
 pid_file="$RUN_STATE/capture.pid"
 path_file="$RUN_STATE/capture.path"
 
-[[ -f "$pid_file" && -f "$path_file" ]] ||
+[[ -f "$pid_file" && ! -L "$pid_file" &&
+   -f "$path_file" && ! -L "$path_file" ]] ||
   die "capture PID/path state is missing for run $RUN_ID; investigate before modifying state"
 
 pid="$(<"$pid_file")"
@@ -21,13 +21,19 @@ capture_path="$(<"$path_file")"
 [[ "$pid" =~ ^[0-9]+$ ]] ||
   die "invalid capture PID state"
 
+capture_directory="$(realpath -e -- "$RUN_EVIDENCE/packet-captures")" ||
+  die "capture evidence directory cannot be resolved"
+resolved_capture_path="$(realpath -m -- "$capture_path")" ||
+  die "recorded capture path cannot be resolved"
+
 [[ -n "$capture_path" &&
-   "$capture_path" == "$RUN_EVIDENCE/packet-captures/"* ]] ||
+   "$resolved_capture_path" == "$capture_path" &&
+   "$resolved_capture_path" == "$capture_directory/"* ]] ||
   die "recorded capture path is outside the expected evidence directory"
 
 metadata="$capture_path.metadata"
 
-[[ -f "$metadata" ]] ||
+[[ -f "$metadata" && ! -L "$metadata" ]] ||
   die "capture metadata is missing: $metadata"
 
 expected_run="$(awk -F= '$1 == "run_id" {print $2; exit}' "$metadata")"
@@ -112,4 +118,3 @@ result PASS \
   "capture process stopped; output retained at $capture_path"
 
 log_event "capture stopped path=$capture_path pid=$pid size_bytes=$size"
-```

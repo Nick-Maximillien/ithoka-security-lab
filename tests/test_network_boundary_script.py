@@ -126,6 +126,8 @@ state = json.loads(path.read_text(encoding="utf-8"))
 if args == ["--version"]:
     print(tool + " v1.8.9 (legacy)")
     raise SystemExit(0)
+if args[:3] == ["-m", "comment", "-h"]:
+    raise SystemExit(0)
 if args[:1] == ["-S"]:
     if len(args) == 1:
         for chain in ("INPUT", "OUTPUT", "FORWARD"):
@@ -277,7 +279,8 @@ path.write_text(json.dumps(state), encoding="utf-8")
         before = self.firewall_state.read_text(encoding="utf-8")
         result = self._run("apply", unsupported)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsupported verification requirements", result.stderr)
+        self.assertIn("does not match the adapter contract", result.stderr)
+        self.assertIn("runtime_acceptance", result.stderr)
         self.assertEqual(self.firewall_state.read_text(encoding="utf-8"), before)
 
 

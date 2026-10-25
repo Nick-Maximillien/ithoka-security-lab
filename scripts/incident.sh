@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -15,6 +14,8 @@ kind="${1:-unknown}"
   die "unsafe incident type; use 1–64 letters, digits, dots, underscores, or hyphens"
 
 umask 077
+
+mkdir -p "$RUN_EVIDENCE"
 
 mkdir -p "$RUN_EVIDENCE"
 
@@ -67,4 +68,3 @@ EOF
 result PASS "incident record created: $file"
 
 log_event "incident created type=$kind file=$file"
-```

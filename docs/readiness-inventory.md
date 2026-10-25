@@ -7,8 +7,8 @@ This is a repository readiness record based on operator-provided command output.
 ## Repository facts
 
 - Workspace is `/home/maximillien/security-lab` in an Ubuntu WSL distribution, accessed in this session through a WSL UNC path.
-- The repository contains the Compose definition, platform scripts, configuration examples, experiment definitions, tests, design documents, and [../lab-set.md](../lab-set.md).
-- Runtime state and evidence are generated under repository-local `state/`, `logs/`, and `evidence-staging/` paths by default. Scientific runs use `state/science/instances/<instance-id>/` and `evidence-staging/science/<instance-id>/<run-id>/`.
+- The repository contains the Python control plane, Docker Compose backend, platform scripts, configuration examples, tests, design documents, [../lab-set.md](../lab-set.md), and [../lab-set.d/commands.md](../lab-set.d/commands.md).
+- Runtime state and evidence are generated under repository-local `state/`, `logs/`, and `evidence-staging/` paths by default.
 
 ## Host/runtime facts
 
@@ -34,7 +34,7 @@ Before enabling runtime approval:
 1. Preserve the host and daemon output above as the baseline readiness record.
 2. Inspect available disk headroom and the complete Docker network/resource inventory.
 3. Confirm dependency availability/acquisition and inspect all validation output.
-4. Run the checks in [../lab-set.md](../lab-set.md), starting with `lab.py validate` and `preflight.sh`; retain actual command output and mark each outcome Pass, Fail, or Not tested.
+4. Run the checks in [../lab-set.md](../lab-set.md), starting with `python3 lab/lab.py status --json`, `./scripts/preflight.sh`, and the relevant `validate-investigation` and network discovery commands; retain actual output and mark each outcome Pass, Fail, or Not tested.
 
 No repository operation is authorized by this inventory to change host firewall, routes, WSL configuration, Docker context, or unrelated resources.
 
@@ -44,7 +44,9 @@ The codebase now provides read-only network discovery and an explicit
 operator-confirmed configuration at `config/networks/machine.yaml`, generated
 from `machine.yaml.example`. Run `python3 lab/lab.py networks discover` and
 review current host values before relying on the historical observations above.
-The repository currently has 38 passing tests, including policy resolution,
-enforcement-plan generation, runtime admission, and state-locking tests. These
-tests remain isolated and do not establish live Docker, firewall, packet
-capture, or Windows-host acceptance.
+The repository currently has 135 tests covering catalogs, resource resolution,
+policy validation and enforcement-plan generation, OS API parsing and command
+handling, native action dispatch and ownership checks, enforcement adapters,
+runtime admission, state-locking, and isolated shell-controller behavior.
+These tests do not establish live Docker, firewall, packet-capture, or
+Windows-host acceptance.

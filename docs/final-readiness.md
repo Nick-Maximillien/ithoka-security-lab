@@ -31,22 +31,48 @@ authorized operator phase in WSL.
 - Added network discovery, machine-specific configuration validation,
   inspectable enforcement plans, scoped apply/verify/remove commands, policy
   provenance metadata, and runtime admission locking.
+- Integrated distinct capability and material catalogs. Resource references
+  resolve only to explicitly registered, available materials; an empty
+  materials catalog remains valid.
+- Repaired shell-controller parsing and state handling, aligned maintenance
+  record fields with policy, and added isolated shell regression coverage.
+- Restored Compose validation in the validation module and kept unsupported
+  runtime boundaries fail-closed.
+- Added read-only inspection of effective Docker project state, wired it into
+  pre-readiness and post-start lifecycle gates, and added mock coverage for
+  context refusal, effective-settings violations, incomplete state, and
+  containment after a post-start failure.
+- Added `lab/enforcement/` with typed scope/result contracts and Docker,
+  Linux/WSL, and read-only Windows host adapters; documented each boundary's
+  owner, verification state, and restoration behavior.
+- Added `lab/osapi/` with structured Linux, Docker, Windows, and WSL
+  observations, shell-free bounded command execution, and the read-only
+  `os inspect` command. Linux apply/verify/remove now checks a fresh
+  IPv4/IPv6 ruleset for the project-owned chains after the boundary script.
 
 ## Verification results
 
-Commands run from the Windows-hosted workspace:
+The repository test, syntax, and diff checks listed here were rerun on
+2026-10-25. Host and Docker observations below are recorded snapshots and must
+be refreshed before operational use.
+
+Commands run from the Windows-hosted workspace through WSL:
 
 | Command | Result |
 | --- | --- |
-| `python -m pytest -q` | **PASS — 38 passed** |
-| `python -m compileall -q lab gui` | **PASS** |
-| `bash -n scripts/lib.sh scripts/preflight.sh scripts/capture-start.sh scripts/capture-stop.sh scripts/gui.sh scripts/maintenance.sh scripts/incident.sh` | **PASS** |
-| `python lab/lab.py status --json` | **BLOCKED in this shell — controller intentionally requires POSIX/WSL** |
-| `python lab/lab.py capabilities --json` | **BLOCKED in this shell — same environment guard** |
+| `python3 -m unittest discover -s tests -v` | **PASS — 135 tests** |
+| `python3 -m compileall -q lab tests` | **PASS** |
+| `python3 lab/lab.py networks inspect-docker sec-lab-i-no-resources` | **UNKNOWN — no owned project network exists** |
+| `python3 lab/lab.py os inspect` | **Valid read-only JSON; exit 1 because firewall and cross-boundary observations are UNKNOWN** |
 
 No Docker construction, image pull/build, capture, host-network change,
 destructive lifecycle action, WSL shutdown, or emergency stop was executed.
-No formatter, linter, or runtime acceptance test was available or run.
+No network acceptance test was run. The Docker inspection is implemented and
+mock-tested, but there was no project container to verify live. `pytest` is
+not required; the repository's unittest suite was used. Live OS inspection
+could read the Docker daemon and most Linux/Windows inventories, but Linux and
+Windows firewall reads were unavailable and WSL networking/boundary assessment
+remained `UNKNOWN`. No host firewall or network changes were made.
 
 ## Capability status
 
@@ -54,7 +80,9 @@ No formatter, linter, or runtime acceptance test was available or run.
 | --- | --- | --- | --- | --- | --- |
 | CLI | Yes | Partial | No | No | Must be exercised from intended WSL checkout |
 | Specification validation | Yes | Yes | Partial | No | Runtime Compose parser behavior remains unverified |
-| Resource resolution | Yes | Yes | No | No | Image provenance is operator work |
+| Capability catalog | Yes | Yes | No | No | Adapter/runtime enforcement is not established by registration |
+| Materials catalog | Yes | Yes | No | No | Registration does not prove runtime presence or provenance |
+| Resource resolution | Yes | Yes | No | No | Image/material provenance and presence require operator acceptance |
 | Construction | Yes | Partial/mock | No | No | Docker project and effective limits require acceptance |
 | Disposal | Yes | No | No | No | Ownership and orphan behavior require target-host verification |
 | Workspace lifecycle | Yes | Yes | No | No | Host filesystem recovery remains untested |
@@ -63,14 +91,16 @@ No formatter, linter, or runtime acceptance test was available or run.
 | Dashboard | Yes, optional | Partial | No | No | Streamlit dependency/import and rerun behavior need operator environment testing |
 | Operational scripts | Yes | Syntax only | No | No | Docker, capture, and host state checks remain untested |
 | Emergency stop | Yes | Static policy only | No | No | Windows/WSL execution and ownership verification remain untested |
+| Docker runtime inspection | Yes | Yes | No | Partial/read-only | No lab-owned project network or container was available |
 | Runtime policy | Policy resolution, scoped adapter path, and admission locking | Yes | Mocked only | No | Live Docker/firewall acceptance is pending |
 
 ## Runtime blockers
 
 The following must block a relevant investigation until verified:
 
-1. The operator has not confirmed the Docker context and daemon identity in the
-   intended WSL distribution.
+1. The approved Docker context is `default`, and the daemon ID was observed,
+   but that daemon identity is not pinned in machine configuration or separately
+   operator-confirmed.
 2. Submitted images do not have reviewed provenance and availability records.
 3. Effective Compose resource limits, network egress behavior, published-port
    absence, and host-mount absence have not been observed at runtime.
@@ -80,6 +110,10 @@ The following must block a relevant investigation until verified:
    have not been accepted.
 6. Windows emergency-stop behavior, logging, and the explicit WSL shutdown
    escalation have not been accepted.
+
+Catalog entries describe approved intent only. They do not prove that an
+adapter is active, a resource is present, or an experiment has passed runtime
+acceptance.
 
 ## Next operator sequence
 

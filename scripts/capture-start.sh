@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -46,7 +45,8 @@ mkdir -p "$RUN_EVIDENCE/packet-captures" "$RUN_STATE"
 pid_file="$RUN_STATE/capture.pid"
 path_file="$RUN_STATE/capture.path"
 
-if [[ -f "$pid_file" || -f "$path_file" ]]; then
+if [[ -e "$pid_file" || -L "$pid_file" ||
+      -e "$path_file" || -L "$path_file" ]]; then
   [[ -f "$pid_file" && -f "$path_file" ]] ||
     die "incomplete capture state exists; investigate before starting another capture"
 
@@ -80,7 +80,8 @@ esac
 capture="$RUN_EVIDENCE/packet-captures/$interface-$RUN_ID.$extension"
 metadata="$capture.metadata"
 
-[[ ! -e "$capture" && ! -e "$metadata" ]] ||
+[[ ! -e "$capture" && ! -L "$capture" &&
+   ! -e "$metadata" && ! -L "$metadata" ]] ||
   die "capture output already exists; refusing to overwrite evidence"
 
 started_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -109,6 +110,12 @@ esac
 
 capture_pid="$!"
 
+# Publish state immediately so every later startup failure remains
+# attributable and can be investigated without guessing a process identity.
+printf '%s\n' "$capture" > "$path_file"
+printf '%s\n' "$capture_pid" > "$pid_file"
+printf 'pid=%s\n' "$capture_pid" >> "$metadata"
+
 # Allow the process to initialize, then confirm it remains alive.
 sleep 1
 
@@ -132,12 +139,7 @@ process_args="$(ps -p "$capture_pid" -o args= 2>/dev/null || true)"
    "$process_args" == *"-i $interface"* ]] ||
   die "started process arguments do not match the requested capture"
 
-# Publish state only after basic process verification.
-printf '%s\n' "$capture" > "$path_file"
-printf '%s\n' "$capture_pid" > "$pid_file"
-
 {
-  printf 'pid=%s\n' "$capture_pid"
   printf 'capture_status=running\n'
 } >> "$metadata"
 
@@ -145,4 +147,3 @@ result PASS \
   "capture process started pid=$capture_pid interface=$interface tool=$tool"
 
 log_event "capture started interface=$interface tool=$tool path=$capture pid=$capture_pid"
-```

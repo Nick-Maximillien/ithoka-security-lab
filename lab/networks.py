@@ -16,6 +16,7 @@ import copy
 import datetime as dt
 import ipaddress
 import json
+import os
 import platform
 import re
 import shlex
@@ -60,6 +61,13 @@ BOUNDARY_KEYS = {
     "description",
     "reason",
     "adapter",
+}
+
+FIXED_DENY_BOUNDARIES = {
+    "ipv4",
+    "ipv6",
+    "filesystem",
+    "resource_access",
 }
 
 BOUNDARY_FILE_NAMES = {
@@ -135,6 +143,13 @@ UNIMPLEMENTED_BOUNDARIES = {
         "Runtime capture activation, integrity checks, and evidence collection "
         "are not implemented by this policy resolver."
     ),
+}
+
+UNIMPLEMENTED_BOUNDARY_CODES = {
+    "windows_host": "windows-firewall-required",
+    "dns": "dedicated-enforcement-not-implemented",
+    "proxies": "dedicated-enforcement-not-implemented",
+    "capture": "runtime-capture-not-implemented",
 }
 
 # These controls may be validated by other layers, but this module alone does
@@ -266,6 +281,25 @@ def validate_policy(
         if not isinstance(boundary, dict):
             raise LabError(f"{boundary_label} must be a mapping")
 
+        required_boundary_keys = {
+            "enabled",
+            "mode",
+            "direction",
+            "scope",
+            "rules",
+            "exceptions",
+            "verification",
+            "description",
+            "reason",
+            "adapter",
+        }
+        missing_keys = required_boundary_keys - boundary.keys()
+        if missing_keys:
+            raise LabError(
+                f"{boundary_label} is missing required fields: "
+                + ", ".join(sorted(missing_keys))
+            )
+
         unknown_keys = set(boundary) - BOUNDARY_KEYS
         if unknown_keys:
             raise LabError(
@@ -277,7 +311,9 @@ def validate_policy(
             raise LabError(f"{boundary_label}.enabled must be boolean")
 
         if boundary.get("mode") not in MODES:
-            raise LabError(f"{boundary_label}.mode is unsupported")
+            raise LabError(
+                f"{boundary_label} has unsupported mode: {boundary.get('mode')!r}"
+            )
 
         if boundary.get("direction") not in DIRECTIONS:
             raise LabError(f"{boundary_label}.direction is unsupported")
@@ -287,9 +323,7 @@ def validate_policy(
                 raise LabError(f"{boundary_label}.{key} must be a list")
 
         for key in ("scope", "adapter", "description", "reason"):
-            if key in boundary and boundary[key] is not None:
-                if not isinstance(boundary[key], str):
-                    raise LabError(f"{boundary_label}.{key} must be text")
+            require_text(boundary[key], f"{boundary_label}.{key}")
 
         for index, rule in enumerate(boundary["rules"]):
             _validate_rule(rule, f"{boundary_label}.rules[{index}]")
@@ -302,6 +336,8 @@ def validate_policy(
                 raise LabError(
                     f"{boundary_label}.verification[{index}] must be non-empty text"
                 )
+        if len(boundary["verification"]) != len(set(boundary["verification"])):
+            raise LabError(f"{boundary_label}.verification contains duplicates")
 
         # Exceptions must not silently bypass a deny-only boundary.
         if boundary["enabled"] and boundary["mode"] == "deny":
@@ -322,12 +358,11 @@ def _profile_path(root: Path, profile: str) -> Path:
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", profile):
         raise LabError("invalid network profile name")
 
-    if profile not in CANONICAL_PROFILES:
-        raise LabError(f"unsupported network profile: {profile}")
-
     path = root / "config" / "networks" / "profiles" / f"{profile}.yaml"
     if not path.is_file():
         raise LabError(f"network profile does not exist: {profile}")
+    if profile not in CANONICAL_PROFILES:
+        raise LabError(f"unsupported network profile: {profile}")
     return path
 
 
@@ -392,8 +427,11 @@ def _resolve_profile(
 
     for name in BOUNDARIES:
         selection = selections[name]
-        if not isinstance(selection, dict):
-            raise LabError(f"network profile {profile}.{name} must be a mapping")
+        require_mapping(
+            selection,
+            f"network profile {profile}.{name}",
+            {"source", "overrides"},
+        )
 
         if selection.get("source") != BOUNDARY_FILE_NAMES[name]:
             raise LabError(
@@ -401,7 +439,7 @@ def _resolve_profile(
                 "the wrong boundary source"
             )
 
-        overrides = selection.get("overrides", {})
+        overrides = selection["overrides"]
         if not isinstance(overrides, dict):
             raise LabError(
                 f"network profile {profile}.{name}.overrides must be a mapping"
@@ -552,6 +590,23 @@ def _boundary_capability(
     boundary: dict[str, Any],
 ) -> dict[str, Any]:
     """Evaluate support claims conservatively for one boundary."""
+    if name in FIXED_DENY_BOUNDARIES and (
+        not boundary["enabled"] or boundary["mode"] != "deny"
+    ):
+        if name in {"filesystem", "resource_access"}:
+            reason = (
+                "controller-integrity: safeguards require this boundary "
+                "to remain enabled in deny mode"
+            )
+        else:
+            reason = "required-deny"
+        return {
+            "status": "unsupported",
+            "reason": reason,
+            "enforcement_verified": False,
+            "acceptance": "not-run",
+        }
+
     if not boundary["enabled"]:
         return {
             "status": "not-required",
@@ -563,7 +618,10 @@ def _boundary_capability(
     if name in UNIMPLEMENTED_BOUNDARIES:
         return {
             "status": "unsupported",
-            "reason": UNIMPLEMENTED_BOUNDARIES[name],
+            "reason": (
+                f"{UNIMPLEMENTED_BOUNDARY_CODES[name]}: "
+                f"{UNIMPLEMENTED_BOUNDARIES[name]}"
+            ),
             "enforcement_verified": False,
             "acceptance": "not-run",
         }
@@ -592,21 +650,28 @@ def _boundary_capability(
     problems: list[str] = []
 
     if boundary["mode"] != "deny":
-        problems.append("required mode is deny")
+        problems.append("required-deny")
 
     if boundary.get("adapter") != requirement["adapter"]:
         problems.append(
             f"required adapter is {requirement['adapter']}"
         )
 
-    if set(boundary["verification"]) != requirement["verification"]:
+    verification = set(boundary["verification"])
+    missing_verification = requirement["verification"] - verification
+    unsupported_verification = (
+        verification - requirement["verification"] - {"runtime_acceptance"}
+    )
+    if missing_verification or unsupported_verification:
         problems.append(
-            "verification requirements do not match the registered adapter contract"
+            "unsupported-verification requirements: "
+            f"missing={sorted(missing_verification)}, "
+            f"unsupported={sorted(unsupported_verification)}"
         )
 
     if boundary["rules"] or boundary["exceptions"]:
         problems.append(
-            "custom rules and exceptions have no registered rule compiler"
+            "custom-rules have no registered rule compiler"
         )
 
     if not boundary.get("scope"):
@@ -614,7 +679,8 @@ def _boundary_capability(
 
     if name == "external_networks":
         problems.append(
-            "runtime acceptance is mandatory and has not been implemented "
+            "runtime-acceptance-unavailable: runtime acceptance is mandatory "
+            "and has not been implemented "
             "by this module"
         )
 
@@ -961,45 +1027,149 @@ def _run_inventory(command: list[str], timeout: int = 10) -> str:
 
 def discover_network_inventory() -> dict[str, Any]:
     """Return read-only observations from the current Linux/WSL environment."""
-    commands = {
-        "interfaces": ["ip", "-details", "address", "show"],
-        "routes": ["ip", "route", "show"],
-        "routes_ipv6": ["ip", "-6", "route", "show"],
-        "resolvers": ["cat", "/etc/resolv.conf"],
-        "docker_version": [
-            "docker", "version", "--format", "{{.Server.Version}}"
-        ],
-        "docker_context": ["docker", "context", "show"],
-        "docker_networks": ["docker", "network", "ls"],
-        "docker_network_details": [
-            "docker", "network", "ls", "--format",
-            "{{.ID}} {{.Name}} {{.Driver}} {{.Scope}}",
-        ],
-        "compose_version": ["docker", "compose", "version"],
-        "iptables_version": ["iptables", "--version"],
-        "ip6tables_version": ["ip6tables", "--version"],
-        "nftables_version": ["nft", "--version"],
-        "iptables_rules": ["iptables", "-S"],
-        "ip6tables_rules": ["ip6tables", "-S"],
-        "nftables_rules": ["nft", "list", "ruleset"],
-    }
+    from .osapi.docker.daemon import inspect_daemon
+    from .osapi.docker.networks import inspect_networks
+    from .osapi.linux.firewall import inspect_firewall
+    from .osapi.linux.forwarding import inspect_forwarding
+    from .osapi.linux.interfaces import inspect_interfaces
+    from .osapi.linux.mounts import inspect_mounts
+    from .osapi.linux.proxies import inspect_proxy_environment
+    from .osapi.linux.resolvers import inspect_resolvers
+    from .osapi.linux.routes import inspect_routes
+    from .osapi.linux.sysctl import inspect_sysctl
+    interface_report = inspect_interfaces()
+    route_report = inspect_routes()
+    forwarding_report = inspect_forwarding()
+    sysctl_report = inspect_sysctl()
+    firewall_report = inspect_firewall()
+    resolver_report = inspect_resolvers()
+    proxy_report = inspect_proxy_environment()
+    mounts_report = inspect_mounts()
+    daemon_report = inspect_daemon()
+    docker_context = (
+        daemon_report.values.get("active_context")
+        if isinstance(daemon_report.values, dict)
+        else None
+    )
+    docker_network_report = (
+        inspect_networks(docker_context)
+        if isinstance(docker_context, str)
+        else None
+    )
+    docker_network_document = (
+        docker_network_report.to_dict()
+        if docker_network_report is not None
+        else {
+            "status": "UNKNOWN",
+            "reason": "Docker context could not be observed",
+            "values": None,
+        }
+    )
+    def family_routes(family: str) -> list[dict[str, Any]]:
+        routes = route_report.values or {}
+        value = routes.get(family, [])
+        return value if isinstance(value, list) else []
 
+    def family_interfaces(family: str) -> list[dict[str, Any]]:
+        wanted = "inet6" if family == "ipv6" else "inet"
+        return [
+            {
+                "name": interface.get("name"),
+                "operstate": interface.get("operstate"),
+                "addresses": [
+                    address
+                    for address in interface.get("addresses", [])
+                    if address.get("family") == wanted
+                ],
+            }
+            for interface in interface_report.values or []
+            if any(
+                address.get("family") == wanted
+                for address in interface.get("addresses", [])
+            )
+        ]
+
+    def forward_value(key: str) -> str:
+        record = (forwarding_report.values or {}).get(key)
+        if isinstance(record, dict) and "value" in record:
+            return str(record["value"])
+        return "unavailable"
+
+    observations: dict[str, Any] = {
+        "interfaces": interface_report.to_dict(),
+        "interfaces_ipv6": family_interfaces("ipv6"),
+        "routes": family_routes("ipv4"),
+        "routes_ipv6": family_routes("ipv6"),
+        "ipv4_forwarding": forward_value("ipv4"),
+        "ipv6_forwarding": forward_value("ipv6"),
+        "resolvers": resolver_report.to_dict(),
+        "docker_version": (
+            daemon_report.values.get("daemon", {}).get("ServerVersion")
+            if isinstance(daemon_report.values, dict)
+            and isinstance(daemon_report.values.get("daemon"), dict)
+            else "unavailable"
+        ),
+        "docker_context": docker_context or "unavailable",
+        "docker_networks": docker_network_document,
+        "docker_network_details": (
+            docker_network_report.values if docker_network_report else None
+        ),
+        "compose_version": (
+            daemon_report.values.get("compose_version")
+            if isinstance(daemon_report.values, dict)
+            else None
+        ),
+        "iptables_version": (
+            firewall_report.values.get("ipv4", {}).get("version", "unavailable")
+            if isinstance(firewall_report.values, dict)
+            else "unavailable"
+        ),
+        "ip6tables_version": (
+            firewall_report.values.get("ipv6", {}).get("version", "unavailable")
+            if isinstance(firewall_report.values, dict)
+            else "unavailable"
+        ),
+        "nftables_version": (
+            "observed"
+            if isinstance(firewall_report.values, dict)
+            and firewall_report.values.get("nftables")
+            else "unavailable"
+        ),
+        "iptables_rules": firewall_report.values,
+        "ip6tables_rules": firewall_report.values,
+        "sysctl": sysctl_report.to_dict(),
+        "mounts": mounts_report.to_dict(),
+        "proxy_environment": proxy_report.to_dict(),
+    }
     availability = {
-        name: shutil.which(command[0]) is not None
-        for name, command in commands.items()
-    }
-
-    observations = {
-        name: (
-            _run_inventory(command)
-            if availability[name]
-            else "unavailable: command not found"
-        )
-        for name, command in commands.items()
+        "interfaces": interface_report.status.value == "PASS",
+        "interfaces_ipv6": interface_report.status.value == "PASS",
+        "routes": route_report.status.value == "PASS",
+        "routes_ipv6": route_report.status.value == "PASS",
+        "ipv4_forwarding": forward_value("ipv4") != "unavailable",
+        "ipv6_forwarding": forward_value("ipv6") != "unavailable",
+        "resolvers": resolver_report.status.value == "PASS",
+        "docker_version": daemon_report.status.value == "PASS",
+        "docker_context": docker_context is not None,
+        "docker_networks": docker_network_report is not None
+        and docker_network_report.status.value == "PASS",
+        "docker_network_details": docker_network_report is not None
+        and docker_network_report.status.value == "PASS",
+        "compose_version": isinstance(daemon_report.values, dict)
+        and daemon_report.values.get("compose_version") is not None,
+        "iptables_version": isinstance(firewall_report.values, dict)
+        and "ipv4" in firewall_report.values,
+        "ip6tables_version": isinstance(firewall_report.values, dict)
+        and "ipv6" in firewall_report.values,
+        "nftables_version": isinstance(firewall_report.values, dict)
+        and "nftables" in firewall_report.values,
+        "iptables_rules": isinstance(firewall_report.values, dict)
+        and "ipv4" in firewall_report.values,
+        "ip6tables_rules": isinstance(firewall_report.values, dict)
+        and "ipv6" in firewall_report.values,
     }
 
     release = platform.release()
-    resolver_output = observations["resolvers"]
 
     return {
         "platform": {
@@ -1009,14 +1179,17 @@ def discover_network_inventory() -> dict[str, Any]:
             "python": platform.python_version(),
         },
         "wsl_indicators": {
-            "is_wsl": (
-                "microsoft" in release.lower()
-                or "microsoft" in resolver_output.lower()
-            ),
+            "is_wsl": "microsoft" in release.lower(),
             "kernel_release": release,
         },
         "availability": availability,
         "observations": observations,
+        "proxy_environment": {
+            "configured_variable_names": (
+                (proxy_report.values or {}).get("configured_variable_names", [])
+            ),
+            "values_redacted": True,
+        },
         "read_only": True,
         "enforcement_verified": False,
         "runtime_acceptance": "not-run",
@@ -1112,21 +1285,34 @@ def configure_machine(
     return destination
 
 
-def inspect_owned_network(project: str) -> dict[str, Any]:
+def inspect_owned_network(
+    project: str,
+    docker_context: str | None = None,
+    runner: Any | None = None,
+) -> dict[str, Any]:
     """Inspect one investigation's owned internal bridge without modifying it."""
     if not re.fullmatch(r"sec-lab-i-[a-z0-9][a-z0-9-]{0,31}", project):
         raise LabError("invalid investigation project")
 
+    docker = ["docker"]
+    if docker_context is not None:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", docker_context):
+            raise LabError("invalid Docker context name")
+        docker.extend(["--context", docker_context])
+    if runner is None:
+        runner = subprocess.run
+
     try:
-        result = subprocess.run(
-            [
-                "docker", "network", "ls", "-q", "--no-trunc",
+        result = runner(
+            docker + [
+                "network", "ls", "-q", "--no-trunc",
                 "--filter", f"label=com.docker.compose.project={project}",
             ],
             capture_output=True,
             text=True,
             check=False,
             timeout=20,
+            shell=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise LabError(f"cannot enumerate project network: {exc}") from exc
@@ -1143,15 +1329,16 @@ def inspect_owned_network(project: str) -> dict[str, Any]:
         raise LabError("Docker returned a malformed full project network ID")
 
     try:
-        inspected = subprocess.run(
-            [
-                "docker", "network", "inspect", network_id,
+        inspected = runner(
+            docker + [
+                "network", "inspect", network_id,
                 "--format", "{{json .}}",
             ],
             capture_output=True,
             text=True,
             check=False,
             timeout=20,
+            shell=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise LabError(f"cannot inspect project network: {exc}") from exc
@@ -1220,12 +1407,13 @@ def inspect_owned_network(project: str) -> dict[str, Any]:
             raise LabError("project network has no resolvable Docker IPAM gateway")
 
         try:
-            interfaces = subprocess.run(
+            interfaces = runner(
                 ["ip", "-j", "address", "show"],
                 capture_output=True,
                 text=True,
                 check=False,
                 timeout=10,
+                shell=False,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             raise LabError(f"cannot resolve project bridge interface: {exc}") from exc
@@ -1279,6 +1467,628 @@ def inspect_owned_network(project: str) -> dict[str, Any]:
         "enforcement_verified": False,
         "runtime_acceptance": "not-run",
     }
+
+
+def inspect_docker_project(
+    project: str,
+    root: Path = Path("."),
+    runner: Any = subprocess.run,
+) -> dict[str, Any]:
+    """Inspect effective Docker controls for one owned project without mutation."""
+    if not re.fullmatch(r"sec-lab-i-[a-z0-9][a-z0-9-]{0,31}", project):
+        raise LabError("invalid investigation project")
+
+    def report(status: str, reason: str, **details: Any) -> dict[str, Any]:
+        return {
+            "status": status,
+            "project": project,
+            "read_only": True,
+            "reason": reason,
+            "findings": [],
+            **details,
+        }
+
+    def run(command: list[str], label: str) -> str:
+        try:
+            completed = runner(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=20,
+                shell=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise LabError(f"cannot {label}: {exc}") from exc
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or f"exit {completed.returncode}"
+            raise LabError(f"cannot {label}: {detail}")
+        return completed.stdout.strip()
+
+    try:
+        machine_document = load_yaml(root / MACHINE_CONFIG)
+        if not isinstance(machine_document, dict):
+            raise LabError("machine network configuration must be a mapping")
+        confirmed = machine_document.get("operator_confirmed")
+        if not isinstance(confirmed, dict):
+            raise LabError("machine operator-confirmed settings are missing")
+        approved_context = confirmed.get("approved_docker_context")
+        if (
+            not isinstance(approved_context, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", approved_context)
+        ):
+            raise LabError("approved Docker context name is invalid")
+        active_context = run(["docker", "context", "show"], "read Docker context")
+    except (LabError, KeyError, TypeError) as exc:
+        return report("UNKNOWN", f"Docker context inspection is incomplete: {exc}")
+
+    if active_context != approved_context:
+        return report(
+            "BLOCKED",
+            "active Docker context does not match the operator-approved context",
+            active_context=active_context,
+            approved_context=approved_context,
+        )
+
+    try:
+        validate_machine_configuration(root)
+    except LabError as exc:
+        return report(
+            "UNKNOWN",
+            f"operator-approved Docker context could not be validated: {exc}",
+            active_context=active_context,
+            approved_context=approved_context,
+        )
+
+    try:
+        endpoint_text = run(
+            [
+                "docker", "context", "inspect", active_context,
+                "--format", "{{json .Endpoints.docker}}",
+            ],
+            "inspect Docker context endpoint",
+        )
+        endpoint = json.loads(endpoint_text)
+        if not isinstance(endpoint, dict) or not isinstance(endpoint.get("Host"), str):
+            raise ValueError("context endpoint has no Docker Host")
+    except (LabError, ValueError, TypeError) as exc:
+        return report("UNKNOWN", f"Docker context endpoint is unavailable: {exc}")
+
+    endpoint_scheme = endpoint["Host"].partition("://")[0].lower()
+    if endpoint_scheme not in {"unix", "npipe"}:
+        if endpoint_scheme in {"ssh", "tcp", "http", "https"}:
+            return report(
+                "BLOCKED",
+                "remote Docker endpoints are not approved for lab workloads",
+                active_context=active_context,
+                endpoint_scheme=endpoint_scheme,
+            )
+        return report(
+            "UNKNOWN",
+            "Docker endpoint locality cannot be determined",
+            active_context=active_context,
+            endpoint_scheme=endpoint_scheme or "unknown",
+        )
+
+    docker = ["docker", "--context", active_context]
+    try:
+        daemon_text = run(
+            [
+                *docker,
+                "info",
+                "--format",
+                "{{.ID}}|{{.Name}}|{{.ServerVersion}}|{{.OSType}}|{{.Architecture}}",
+            ],
+            "inspect Docker daemon identity",
+        )
+        daemon_fields = daemon_text.split("|")
+        if len(daemon_fields) != 5 or any(not value for value in daemon_fields):
+            raise ValueError("Docker daemon identity is incomplete")
+        if daemon_fields[3].lower() != "linux":
+            return report(
+                "BLOCKED",
+                "the lab's Linux/WSL Docker adapter does not support this daemon OS",
+                active_context=active_context,
+                endpoint_scheme=endpoint_scheme,
+                daemon_os=daemon_fields[3],
+            )
+
+        network = inspect_owned_network(
+            project,
+            active_context,
+            runner=runner,
+        )
+        container_listing = run(
+            [
+                *docker,
+                "ps",
+                "-aq",
+                "--filter",
+                f"label=com.docker.compose.project={project}",
+            ],
+            "enumerate project containers",
+        )
+        container_ids = container_listing.split()
+        if not container_ids:
+            return report(
+                "UNKNOWN",
+                "no Compose project containers are available for inspection",
+                active_context=active_context,
+                approved_context=approved_context,
+                endpoint_scheme=endpoint_scheme,
+                daemon={
+                    "id": daemon_fields[0],
+                    "name": daemon_fields[1],
+                    "server_version": daemon_fields[2],
+                    "os_type": daemon_fields[3],
+                    "architecture": daemon_fields[4],
+                },
+                network={
+                    "id": network["network_id"],
+                    "name": network["name"],
+                    "endpoint_count": len(network.get("containers", {})),
+                },
+            )
+        if any(
+            not re.fullmatch(r"[0-9a-fA-F]{12,64}", value)
+            for value in container_ids
+        ):
+            raise ValueError("Docker returned a malformed container ID")
+
+        inspected_text = run(
+            [*docker, "inspect", *container_ids],
+            "inspect project containers",
+        )
+        containers = json.loads(inspected_text)
+        if (
+            not isinstance(containers, list)
+            or len(containers) != len(container_ids)
+            or not all(isinstance(item, dict) for item in containers)
+        ):
+            raise ValueError("Docker returned an incomplete container inspection")
+    except (LabError, ValueError, TypeError) as exc:
+        return report(
+            "UNKNOWN",
+            f"project runtime inspection is incomplete: {exc}",
+            active_context=active_context,
+            endpoint_scheme=endpoint_scheme,
+        )
+
+    findings: list[dict[str, Any]] = []
+
+    def check(name: str, passed: bool | None, observed: Any, expected: str) -> None:
+        findings.append({
+            "control": name,
+            "status": (
+                "PASS" if passed is True
+                else "FAIL" if passed is False
+                else "UNKNOWN"
+            ),
+            "observed": observed,
+            "expected": expected,
+        })
+
+    network_name = network["name"]
+    expected_investigation = project.removeprefix("sec-lab-i-")
+    endpoints = network.get("containers", {})
+    endpoint_ids = (
+        {str(value).lower() for value in endpoints}
+        if isinstance(endpoints, dict)
+        else set()
+    )
+    inspected_ids = {
+        str(item.get("Id", "")).lower()
+        for item in containers
+        if isinstance(item.get("Id"), str)
+    }
+    check(
+        "network-endpoints-owned",
+        (
+            {value[:12] for value in endpoint_ids}
+            == {value[:12] for value in inspected_ids}
+            if isinstance(endpoints, dict)
+            else None
+        ),
+        {
+            "attached": sorted(value[:12] for value in endpoint_ids),
+            "project_containers": sorted(value[:12] for value in inspected_ids),
+        },
+        "every project container is attached to the owned network and no foreign endpoint is attached",
+    )
+    check(
+        "internal-bridge",
+        network.get("internal") is True and network.get("driver") == "bridge",
+        {"internal": network.get("internal"), "driver": network.get("driver")},
+        "internal bridge network",
+    )
+    check(
+        "ipv6-disabled",
+        (
+            network.get("enable_ipv6") is False
+            if "enable_ipv6" in network
+            else None
+        ),
+        network.get("enable_ipv6"),
+        "IPv6 disabled on the project bridge",
+    )
+
+    summaries: list[dict[str, Any]] = []
+    for container in containers:
+        container_id = container.get("Id")
+        config = container.get("Config")
+        host = container.get("HostConfig")
+        state = container.get("State")
+        settings = container.get("NetworkSettings")
+        if (
+            not isinstance(container_id, str)
+            or not all(isinstance(value, dict) for value in (config, host, state, settings))
+        ):
+            check(
+                "container-inspection-complete",
+                None,
+                container_id[:12] if isinstance(container_id, str) else None,
+                "container identity, Config, HostConfig, State, and NetworkSettings",
+            )
+            continue
+
+        labels = config.get("Labels")
+        labels = labels if isinstance(labels, dict) else {}
+        check(
+            "container-ownership",
+            labels.get("io.ithoka.security-lab.owner") == "security-lab"
+            and labels.get("io.ithoka.security-lab.investigation") == expected_investigation
+            and labels.get("com.docker.compose.project") == project,
+            {
+                "container_id": container_id[:12],
+                "owner": labels.get("io.ithoka.security-lab.owner"),
+                "investigation": labels.get("io.ithoka.security-lab.investigation"),
+                "compose_project": labels.get("com.docker.compose.project"),
+            },
+            "matching lab owner, investigation, and Compose project labels",
+        )
+        image_id = container.get("Image")
+        check(
+            "image-identity",
+            (
+                bool(re.fullmatch(r"sha256:[0-9a-fA-F]{64}", image_id))
+                if isinstance(image_id, str)
+                else None
+            ),
+            image_id,
+            "resolved image content ID in sha256 form",
+        )
+
+        actual_networks = settings.get("Networks")
+        attached_networks = (
+            sorted(actual_networks) if isinstance(actual_networks, dict) else None
+        )
+        check(
+            "network-attachments",
+            attached_networks == [network_name],
+            attached_networks,
+            f"only the owned internal network {network_name}",
+        )
+        check(
+            "host-network-mode",
+            (
+                host.get("NetworkMode") != "host"
+                if isinstance(host.get("NetworkMode"), str)
+                else None
+            ),
+            host.get("NetworkMode"),
+            "not host network mode",
+        )
+
+        port_bindings = host.get("PortBindings")
+        effective_ports = settings.get("Ports")
+
+        def valid_port_map(value: Any, require_host_port: bool = False) -> bool:
+            return value is None or (
+                isinstance(value, dict)
+                and all(
+                    bindings is None
+                    or (
+                        isinstance(bindings, list)
+                        and all(
+                            isinstance(binding, dict)
+                            and (
+                                not require_host_port
+                                or isinstance(binding.get("HostPort"), str)
+                            )
+                            for binding in bindings
+                        )
+                    )
+                    for bindings in value.values()
+                )
+            )
+
+        bound_ports = (
+            [
+                binding
+                for values in port_bindings.values()
+                if isinstance(values, list)
+                for binding in values
+            ]
+            if isinstance(port_bindings, dict)
+            else []
+        )
+        mapped_ports = (
+            [
+                binding
+                for values in effective_ports.values()
+                if isinstance(values, list)
+                for binding in values
+                if isinstance(binding, dict) and binding.get("HostPort")
+            ]
+            if isinstance(effective_ports, dict)
+            else []
+        )
+        published_port_count = max(len(bound_ports), len(mapped_ports))
+        port_maps_valid = (
+            "PortBindings" in host
+            and "Ports" in settings
+            and valid_port_map(port_bindings)
+            and valid_port_map(effective_ports, require_host_port=True)
+        )
+        check(
+            "published-ports",
+            not bound_ports and not mapped_ports if port_maps_valid else None,
+            published_port_count,
+            "no published host ports",
+        )
+
+        mounts = container.get("Mounts")
+        mounts_valid = isinstance(mounts, list) and all(
+            isinstance(mount, dict) for mount in mounts
+        )
+        check(
+            "mount-inspection",
+            mounts_valid if isinstance(mounts, list) else None,
+            len(mounts) if isinstance(mounts, list) else None,
+            "valid mount inspection list",
+        )
+        if not isinstance(mounts, list):
+            mounts = []
+        bind_mounts = [
+            {
+                "source": str(mount.get("Source", "")),
+                "target": str(mount.get("Destination", "")),
+            }
+            for mount in mounts
+            if isinstance(mount, dict) and mount.get("Type") == "bind"
+        ]
+        socket_mounts = [
+            str(mount.get("Destination") or mount.get("Source") or "")
+            for mount in mounts
+            if isinstance(mount, dict)
+            and (
+                "docker.sock" in str(mount.get("Source", "")).lower()
+                or "docker.sock" in str(mount.get("Destination", "")).lower()
+            )
+        ]
+        check(
+            "host-filesystem-mounts",
+            not bind_mounts if mounts_valid else None,
+            bind_mounts,
+            "no host bind mounts",
+        )
+        check(
+            "docker-socket-mounts",
+            not socket_mounts if mounts_valid else None,
+            socket_mounts,
+            "no Docker socket mounts",
+        )
+        privileged = host.get("Privileged")
+        check(
+            "privileged-mode",
+            privileged is False if isinstance(privileged, bool) else None,
+            privileged,
+            "Privileged=false",
+        )
+        cap_add = host.get("CapAdd")
+        check(
+            "capabilities",
+            not cap_add if "CapAdd" in host and isinstance(cap_add, (list, type(None))) else None,
+            cap_add or [] if isinstance(cap_add, (list, type(None))) else cap_add,
+            "no added Linux capabilities",
+        )
+        cap_drop = host.get("CapDrop")
+        check(
+            "capabilities-dropped",
+            (
+                any(str(value).upper() == "ALL" for value in cap_drop)
+                if isinstance(cap_drop, list)
+                else None
+            ),
+            cap_drop,
+            "all default Linux capabilities dropped",
+        )
+        devices = host.get("Devices")
+        device_requests = host.get("DeviceRequests")
+        check(
+            "device-access",
+            (
+                not devices and not device_requests
+                if "Devices" in host
+                and "DeviceRequests" in host
+                and isinstance(devices, (list, type(None)))
+                and isinstance(device_requests, (list, type(None)))
+                else None
+            ),
+            {"devices": devices or [], "device_requests": device_requests or []},
+            "no host devices or device requests",
+        )
+
+        user = config.get("User")
+        uid = user.split(":", 1)[0] if isinstance(user, str) else user
+        if type(uid) is int:
+            non_root = uid != 0
+        elif isinstance(uid, str):
+            normalized_uid = uid.strip().lower()
+            if normalized_uid in {"", "0", "root"}:
+                non_root = False
+            elif normalized_uid.isdecimal():
+                non_root = int(normalized_uid) != 0
+            else:
+                non_root = None
+        else:
+            non_root = None
+        if "User" not in config:
+            non_root = None
+        check("non-root-user", non_root, user, "explicit non-root user")
+        check(
+            "read-only-root-filesystem",
+            (
+                host.get("ReadonlyRootfs") is True
+                if isinstance(host.get("ReadonlyRootfs"), bool)
+                else None
+            ),
+            host.get("ReadonlyRootfs"),
+            "ReadonlyRootfs=true",
+        )
+        tmpfs = host.get("Tmpfs")
+        if tmpfs is None:
+            tmpfs_valid = True if "Tmpfs" in host else None
+            tmpfs_count = 0
+        elif isinstance(tmpfs, dict):
+            tmpfs_count = len(tmpfs)
+            tmpfs_valid = all(
+                isinstance(path, str)
+                and isinstance(options, str)
+                and re.search(
+                    r"(?:^|,)size=[1-9][0-9]*(?:[kKmMgG])?(?:,|$)",
+                    options,
+                )
+                for path, options in tmpfs.items()
+            )
+        else:
+            tmpfs_count = None
+            tmpfs_valid = None
+        check(
+            "tmpfs-size-limits",
+            tmpfs_valid,
+            tmpfs_count,
+            "each writable tmpfs has a positive explicit size limit",
+        )
+
+        memory = host.get("Memory")
+        nano_cpus = host.get("NanoCpus")
+        cpu_quota = host.get("CpuQuota")
+        cpu_period = host.get("CpuPeriod")
+        pids_limit = host.get("PidsLimit")
+        check(
+            "memory-limit",
+            memory > 0 if type(memory) is int else None,
+            memory,
+            "positive memory limit in bytes",
+        )
+        check(
+            "cpu-limit",
+            (
+                (type(nano_cpus) is int and nano_cpus > 0)
+                or (
+                    type(cpu_quota) is int
+                    and cpu_quota > 0
+                    and type(cpu_period) is int
+                    and cpu_period > 0
+                )
+                if all(
+                    key in host
+                    for key in ("NanoCpus", "CpuQuota", "CpuPeriod")
+                )
+                else None
+            ),
+            {
+                "nano_cpus": nano_cpus,
+                "cpu_quota": cpu_quota,
+                "cpu_period": cpu_period,
+            },
+            "positive NanoCpus or CPU quota and period",
+        )
+        check(
+            "pid-limit",
+            pids_limit > 0 if type(pids_limit) is int else None,
+            pids_limit,
+            "positive PidsLimit",
+        )
+        security_options = host.get("SecurityOpt")
+        security_options_available = isinstance(security_options, list)
+        security_options = security_options if security_options_available else []
+        no_new_privileges = any(
+            str(value).lower() in {"no-new-privileges", "no-new-privileges:true"}
+            for value in security_options
+        )
+        check(
+            "no-new-privileges",
+            no_new_privileges if security_options_available else None,
+            security_options,
+            "no-new-privileges enabled",
+        )
+
+        summaries.append({
+            "id": container_id[:12],
+            "name": str(container.get("Name", "")).lstrip("/"),
+            "image": config.get("Image"),
+            "image_id": image_id,
+            "running": state.get("Running"),
+            "status": state.get("Status"),
+            "network_mode": host.get("NetworkMode"),
+            "network_attachments": attached_networks,
+            "published_port_count": published_port_count,
+            "mount_count": len(mounts),
+            "tmpfs_count": tmpfs_count,
+            "tmpfs": (
+                [
+                    {"target": path, "options": options}
+                    for path, options in tmpfs.items()
+                ]
+                if isinstance(tmpfs, dict)
+                else None
+            ),
+        })
+
+    statuses = {item["status"] for item in findings}
+    if "FAIL" in statuses:
+        overall = "FAIL"
+        reason = "one or more effective Docker runtime controls failed"
+    elif "UNKNOWN" in statuses:
+        overall = "UNKNOWN"
+        reason = "one or more effective Docker runtime controls could not be verified"
+    else:
+        overall = "PASS"
+        reason = "effective project Docker settings satisfy the inspected constraints"
+
+    return report(
+        overall,
+        reason,
+        active_context=active_context,
+        approved_context=approved_context,
+        endpoint_scheme=endpoint_scheme,
+        locality_note=(
+            "A local-socket endpoint does not establish the physical host or "
+            "the Windows/WSL boundary."
+        ),
+        daemon={
+            "id": daemon_fields[0],
+            "name": daemon_fields[1],
+            "server_version": daemon_fields[2],
+            "os_type": daemon_fields[3],
+            "architecture": daemon_fields[4],
+        },
+        network={
+            "id": network["network_id"],
+            "name": network_name,
+            "network_id": network["network_id"],
+            "network_name": network_name,
+            "bridge": network.get("bridge"),
+            "driver": network.get("driver"),
+            "internal": network.get("internal"),
+            "enable_ipv6": network.get("enable_ipv6"),
+            "endpoint_count": len(endpoints),
+        },
+        containers=summaries,
+        findings=findings,
+    )
 
 
 def build_enforcement_plan(
@@ -1415,6 +2225,7 @@ __all__ = [
     "build_enforcement_plan",
     "configure_machine",
     "discover_network_inventory",
+    "inspect_docker_project",
     "inspect_owned_network",
     "list_network_profiles",
     "policy_json",

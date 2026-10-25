@@ -8,6 +8,8 @@ is disposable apparatus constructed inside it.
 | Layer | Responsibility |
 | --- | --- |
 | `lab/` Python control plane | Readiness, specification validation, capability/resource resolution, planning, authorization, construction, ownership, disposal, evidence export |
+| `lab/enforcement/` adapters | Typed scoped results; effective Docker inspection; approved Linux/WSL boundary operations; read-only Windows host observation |
+| `lab/osapi/` | Bounded shell-free command execution, structured read-only observations, and typed allowlisted native actions |
 | YAML specification | Research question, apparatus, resources, procedure, observations, evaluation, evidence, safety, and budgets |
 | Capability catalog | Approved reusable interfaces and their policy contracts |
 | Docker Compose adapter | Creates an investigation-scoped project from the submitted apparatus |
@@ -52,10 +54,23 @@ those boundary files and provide explicit profile overrides. The configured
 records SHA-256 provenance for every input file.
 
 Construction pins that effective policy beside the generated Compose runtime
-file. The Linux/WSL adapter consumes the pinned JSON and verifies its
-project-scoped rules before services start. Changing `active-profile` or a
-boundary file affects later operations only; it does not silently mutate a
-running investigation.
+file. Construction passes the resolved pinned JSON, project, and selected Docker
+target to the OS action interface. Its Linux/WSL action invokes only the
+existing fixed-argument boundary script after checking the Docker context,
+local socket endpoint and daemon-name match, target paths, and non-interactive
+`sudo` availability. A context cannot prove the physical daemon host, which is
+recorded as unverified.
+Changing `active-profile` or a boundary file affects later operations only; it
+does not silently mutate a running investigation.
+
+The Docker action interface additionally supports the existing Compose
+create/start/stop/down lifecycle and approval-gated network connect/disconnect
+operations for container and network IDs whose ownership labels match the
+selected project. Each command resolves and receives its Docker context
+explicitly; attachment operations also require an explicit context. It does not
+interpret profiles or claim that a successful command proves policy
+effectiveness. Native Windows mutations and cross-distribution WSL operations
+are unsupported and return explicit results.
 
 The current adapter can enforce and verify deny-mode IPv4/IPv6 bridge
 controls. Windows Firewall, VMware, VPN/upstream routing, restricted
@@ -80,14 +95,26 @@ researcher specification
   -> selected profile and boundary resolution
   -> machine configuration and capability validation
   -> inspectable enforcement plan
-  -> owned Docker network creation
+  -> owned Docker network and stopped-container creation
   -> scoped boundary apply and verification
-  -> workload start/admission
+  -> effective Docker-state inspection and required runtime acceptance gate
+  -> workload start
+  -> independent post-start Docker-state inspection
   -> evidence collection and ownership-scoped teardown
 ```
 
+The acceptance gate is not a claim that packet-level probes are currently
+available. No bounded live network acceptance runner exists; when required
+acceptance evidence is unavailable, readiness remains closed.
+
 Read-only discovery uses installed WSL/Linux and Docker commands and never
-changes host state. The supported adapter verifies only project-scoped
-deny-mode IPv4/IPv6 bridge rules. The policy model records unsupported or
-unverified Windows, VPN, upstream, restricted, monitor-enforcement, and
-temporary-maintenance capabilities instead of claiming them.
+changes host state. Docker inspection blocks an unapproved or remote context
+and verifies selected effective container settings; a local socket endpoint
+does not prove the daemon's physical host or the Windows/WSL boundary. The
+supported adapter verifies only project-scoped deny-mode IPv4/IPv6 bridge
+rules. The policy model records unsupported or unverified Windows, VPN,
+upstream, restricted, monitor-enforcement, and temporary-maintenance
+capabilities instead of claiming them.
+
+The enforcement adapter contracts and boundary-by-boundary status are recorded
+in [the enforcement gap register](enforcement-gap-register.md).

@@ -1,4 +1,5 @@
 import json
+import platform
 import shutil
 import tempfile
 import unittest
@@ -12,12 +13,33 @@ import lab
 from lab.evidence import archive_evidence
 from lab.foundation import LabError
 from lab.networks import policy_json, resolve_network_policy
+from lab.enforcement.models import EnforcementStatus
+from lab.osapi.models import OSObservation
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ConstructionTests(unittest.TestCase):
+    def _local_docker_daemon(self):
+        return patch(
+            "lab.osapi.actions.inspect_daemon",
+            return_value=OSObservation(
+                platform="docker",
+                subsystem="daemon",
+                operation="inspect",
+                target="default",
+                source="test fixture",
+                observed_utc="now",
+                status=EnforcementStatus.PASS,
+                values={
+                    "selected_context": "default",
+                    "endpoint": {"Host": "unix:///var/run/docker.sock"},
+                    "daemon": {"Name": platform.node(), "OSType": "linux"},
+                },
+            ),
+        )
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name) / "repo"
@@ -149,7 +171,7 @@ networks:
         lab.reset_experiment("workspace-one", self.root)
         lab.destroy_experiment("workspace-one", self.root)
         preserved = self.root / "evidence-staging" / "experiments" / "workspace-one"
-        self.assertTrue((preserved / "notes.txt").exists())
+        self.assertTrue((preserved / "evidence" / "notes.txt").exists())
 
     def test_tool_execution_is_bounded_and_records_output(self):
         lab.init_experiment("tool-one", self.root)
@@ -176,8 +198,7 @@ networks:
         with patch("lab.workspace.subprocess.run", return_value=Result()) as runner:
             record = lab.execute_tool("tool-one", "approved/tool:1", ["sh", "-c", "echo tool"], self.root)
         command = runner.call_args.args[0]
-        self.assertIn("--network", command)
-        self.assertIn("none", command)
+        self.assertIn("--network=none", command)
         self.assertIn("--cap-drop", command)
         self.assertNotIn("--privileged", command)
         self.assertIn("tool output", record.read_text(encoding="utf-8"))
@@ -233,8 +254,29 @@ networks:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with (
+            self._local_docker_daemon(),
             patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}),
             patch("lab.construction.validate_runtime_support"),
+            patch("lab.construction._runtime_admit", return_value={}),
+            patch("lab.construction.release_experiment"),
+            patch(
+                "lab.construction._network_readiness",
+                return_value={
+                    "controls_applied": "PASS",
+                    "effective_behavior": "PASS",
+                    "runtime_acceptance": "PASS",
+                    "ready": True,
+                    "acceptance": {"status": "PASS"},
+                },
+            ),
+            patch(
+                "lab.construction.inspect_docker_project",
+                return_value={
+                    "status": "PASS",
+                    "reason": "effective settings verified",
+                    "findings": [],
+                },
+            ),
         ):
             plan = lab.construct_investigation(
                 self.spec, "boundary-one", "reviewed", self.root, runner=runner
@@ -247,9 +289,74 @@ networks:
         start_index = next(index for index, command in enumerate(calls) if command[-1:] == ["start"])
         self.assertLess(create_index, apply_index)
         self.assertLess(apply_index, start_index)
-        pinned = self.root / "state" / "runtime" / "sec-lab-i-boundary-one-network-policy.json"
+        pinned = (
+            self.root
+            / "state"
+            / "network-boundary"
+            / "sec-lab-i-boundary-one-network-policy.json"
+        )
         self.assertTrue(pinned.is_file())
         self.assertEqual(json.loads(pinned.read_text(encoding="utf-8"))["profile"], "isolated")
+
+    def test_post_start_runtime_verification_failure_triggers_cleanup(self):
+        calls = []
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with (
+            self._local_docker_daemon(),
+            patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}),
+            patch("lab.construction.validate_runtime_support"),
+            patch("lab.construction._runtime_admit", return_value={}),
+            patch("lab.construction.release_experiment"),
+            patch(
+                "lab.construction._network_readiness",
+                return_value={
+                    "controls_applied": "PASS",
+                    "effective_behavior": "PASS",
+                    "runtime_acceptance": "PASS",
+                    "ready": True,
+                    "acceptance": {"status": "PASS"},
+                },
+            ),
+            patch(
+                "lab.construction.inspect_docker_project",
+                return_value={
+                    "status": "FAIL",
+                    "reason": "unexpected published port",
+                    "findings": [],
+                },
+            ),
+        ):
+            with self.assertRaisesRegex(
+                LabError,
+                "after workload start: Docker runtime inspection did not pass",
+            ):
+                lab.construct_investigation(
+                    self.spec,
+                    "post-start-check",
+                    "reviewed",
+                    self.root,
+                    runner=runner,
+                )
+
+        project = "sec-lab-i-post-start-check"
+        evidence_path = (
+            self.root
+            / "state"
+            / "network-boundary"
+            / f"{project}-construction.json"
+        )
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        self.assertEqual(evidence["status"], "FAILED")
+        self.assertEqual(evidence["workloads"]["status"], "FAIL")
+        self.assertEqual(
+            evidence["workloads"]["runtime_inspection"]["status"],
+            "FAIL",
+        )
+        self.assertTrue(any(command[-1:] == ["stop"] for command in calls))
 
     def test_boundary_adapter_scopes_rules_and_saves_cleanup_identity_first(self):
         script = (self.root / "scripts" / "network-boundary.sh").read_text(
@@ -264,7 +371,7 @@ networks:
         self.assertIn('ensure_external_jump ip6tables "$EXT_CHAIN6"', script)
         self.assertIn('ensure_owned_chain iptables "$CHAIN4"', script)
         self.assertIn('ensure_owned_chain ip6tables "$CHAIN6"', script)
-        self.assertLess(apply_block.index("printf 'PROJECT="), apply_block.index("apply_rules"))
+        self.assertLess(apply_block.index("save_state"), apply_block.index("apply_rules"))
         self.assertLess(apply_block.index("apply_rules"), apply_block.index("verify_rules"))
         self.assertNotIn("iptables -F", script)
         self.assertNotIn("ip6tables -F", script)
@@ -280,10 +387,15 @@ networks:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with (
+            self._local_docker_daemon(),
             patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}),
             patch("lab.construction.validate_runtime_support"),
+            patch("lab.construction._runtime_admit", return_value={}),
+            patch("lab.construction.release_experiment"),
         ):
-            with self.assertRaisesRegex(LabError, "network-boundary verify failed"):
+            with self.assertRaisesRegex(
+                LabError, "network-boundary verify did not pass"
+            ):
                 lab.construct_investigation(
                     self.spec, "boundary-two", "reviewed", self.root, runner=runner
                 )
@@ -299,10 +411,15 @@ networks:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with (
+            self._local_docker_daemon(),
             patch.dict("os.environ", {"REQUIRE_RUNTIME_APPROVAL": "true"}),
             patch("lab.construction.validate_runtime_support"),
+            patch("lab.construction._runtime_admit", return_value={}),
+            patch("lab.construction.release_experiment"),
         ):
-            with self.assertRaisesRegex(LabError, "network-boundary apply failed"):
+            with self.assertRaisesRegex(
+                LabError, "network-boundary apply did not pass"
+            ):
                 lab.construct_investigation(
                     self.spec, "boundary-apply-failure", "reviewed", self.root, runner=runner
                 )
@@ -343,15 +460,19 @@ networks:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with self.assertRaisesRegex(LabError, "not verified as owned"):
-            lab.dispose_investigation(
-                self.spec, "disposal-owner-check", self.root, runner=runner
-            )
+            with self._local_docker_daemon(), patch("lab.construction.release_experiment"):
+                with self._local_docker_daemon(), patch(
+                    "lab.construction.release_experiment"
+                ):
+                    lab.dispose_investigation(
+                        self.spec, "disposal-owner-check", self.root, runner=runner
+                    )
         self.assertFalse(any("down" in command for command in calls))
         self.assertFalse(any("network-boundary.sh" in " ".join(command) for command in calls))
 
     def test_disposal_removes_pinned_policy_only_after_owned_cleanup(self):
         project = "sec-lab-i-disposal-owner-check"
-        pinned = self.root / "state" / "runtime" / f"{project}-network-policy.json"
+        pinned = self.root / "state" / "network-boundary" / f"{project}-network-policy.json"
         pinned.parent.mkdir(parents=True, exist_ok=True)
         pinned.write_text(
             policy_json(resolve_network_policy(self.root, "isolated", {
@@ -377,9 +498,12 @@ networks:
                 )
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        lab.dispose_investigation(
-            self.spec, "disposal-owner-check", self.root, runner=runner
-        )
+        with self._local_docker_daemon(), patch(
+            "lab.construction.release_experiment"
+        ):
+            lab.dispose_investigation(
+                self.spec, "disposal-owner-check", self.root, runner=runner
+            )
         self.assertFalse(pinned.exists())
         self.assertTrue(any(command[-2:] == ["down", "--remove-orphans"] for command in calls))
 

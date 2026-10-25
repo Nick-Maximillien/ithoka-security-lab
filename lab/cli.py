@@ -43,6 +43,8 @@ from .networks import (
     validate_runtime_support,
     validate_network_configuration,
 )
+from .enforcement import EnforcementCoordinator, inspect_docker_project
+from .osapi.actions import execute_network_boundary_action
 from .workspace import (
     collect_evidence,
     destroy_experiment,
@@ -74,7 +76,6 @@ from .runtime import _network_readiness as runtime_network_readiness
 
 
 POLICY_STATUS_SCHEMA = "ithoka.security-lab.policy-status.v1"
-NETWORK_BOUNDARY_SCRIPT = ROOT / "scripts" / "network-boundary.sh"
 POLICY_STATE_DIR = ROOT / "state" / "network-boundary"
 
 
@@ -253,6 +254,10 @@ def _read_runtime_acceptance(
         "ready": ready,
         "project": project,
         "controls_applied": readiness.get("controls_applied", "not-verified"),
+        "docker_runtime_inspection": readiness.get(
+            "docker_runtime_inspection",
+            {"status": "NOT_TESTED", "reason": "not inspected"},
+        ),
         "effective_behavior": effective,
         "runtime_acceptance": acceptance,
         "reason": readiness.get(
@@ -330,23 +335,24 @@ def _run_boundary(
     if action not in {"apply", "verify", "remove"}:
         raise LabError(f"unsupported boundary action: {action}")
 
-    if not NETWORK_BOUNDARY_SCRIPT.is_file():
-        raise LabError(f"network boundary script is missing: {NETWORK_BOUNDARY_SCRIPT}")
-
-    command = [
-        "bash",
-        str(NETWORK_BOUNDARY_SCRIPT),
+    result = execute_network_boundary_action(
         action,
         project,
-        str(policy_path),
-    ]
-    return subprocess.run(
-        command,
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
+        policy_path,
+        ROOT,
     )
+    completed = subprocess.CompletedProcess(
+        args=(
+            [result.native_executable, *result.arguments]
+            if result.native_executable
+            else []
+        ),
+        returncode=result.returncode if result.returncode is not None else 1,
+        stdout=result.stdout,
+        stderr=result.stderr or (result.reason or ""),
+    )
+    completed.os_action = result.to_dict()
+    return completed
 
 
 def _require_authorization(reason: str, operation: str) -> None:
@@ -416,6 +422,12 @@ def _parser() -> argparse.ArgumentParser:
     network_commands.add_parser("validate")
     network_commands.add_parser("discover")
 
+    inspect_docker = network_commands.add_parser(
+        "inspect-docker",
+        help="read-only inspection of one investigation's effective Docker state",
+    )
+    inspect_docker.add_argument("project")
+
     configure = network_commands.add_parser("configure")
     configure.add_argument("--overwrite", action="store_true")
 
@@ -460,6 +472,23 @@ def _parser() -> argparse.ArgumentParser:
     maintenance_commands.add_parser("status")
     maintenance_commands.add_parser("enter")
     maintenance_commands.add_parser("leave")
+
+    os_commands = commands.add_parser(
+        "os",
+        help="inspect operating-system, Docker, and WSL state read-only",
+    ).add_subparsers(dest="os_command", required=True)
+    os_inspect = os_commands.add_parser(
+        "inspect",
+        help="collect structured read-only platform observations",
+    )
+    os_inspect.add_argument(
+        "--project",
+        help="also inspect this lab-owned Docker Compose project",
+    )
+    os_inspect.add_argument(
+        "--context",
+        help="inspect the named Docker context (default: active context)",
+    )
 
     runtime = commands.add_parser(
         "runtime",
@@ -560,6 +589,14 @@ def _parser() -> argparse.ArgumentParser:
 
 def _network_command(args: argparse.Namespace) -> int:
     command = args.network_command
+
+    if command == "inspect-docker":
+        inspection = inspect_docker_project(args.project, ROOT)
+        _emit({
+            "schema": POLICY_STATUS_SCHEMA,
+            "docker_runtime_inspection": inspection,
+        })
+        return 0 if inspection["status"] == "PASS" else 1
 
     if command == "profiles":
         profiles = list_network_profiles(ROOT)
@@ -829,6 +866,7 @@ def _network_command(args: argparse.Namespace) -> int:
                 report["operation"] = "apply"
                 report["authorization"] = args.authorize
                 report["network"] = owned_network
+                report["os_action"] = result.os_action
                 report["error"] = (
                     result.stderr.strip()
                     or result.stdout.strip()
@@ -848,6 +886,7 @@ def _network_command(args: argparse.Namespace) -> int:
             report["operation"] = "apply"
             report["authorization"] = args.authorize
             report["network"] = owned_network
+            report["os_action"] = result.os_action
             report["command_output"] = result.stdout.strip()
             _emit(report)
 
@@ -880,6 +919,7 @@ def _network_command(args: argparse.Namespace) -> int:
                     host=host,
                 )
                 report["operation"] = "verify"
+                report["os_action"] = result.os_action
                 report["error"] = (
                     result.stderr.strip()
                     or result.stdout.strip()
@@ -899,6 +939,7 @@ def _network_command(args: argparse.Namespace) -> int:
                 host=host,
             )
             report["operation"] = "verify"
+            report["os_action"] = result.os_action
             report["structural_verification_output"] = result.stdout.strip()
             _emit(report)
 
@@ -933,6 +974,7 @@ def _network_command(args: argparse.Namespace) -> int:
                     host=host,
                 )
                 report["operation"] = "test"
+                report["os_action"] = result.os_action
                 report["authorization"] = args.authorize
                 report["live_connectivity_tests"] = "NOT_RUN"
                 report["error"] = (
@@ -1006,6 +1048,7 @@ def _network_command(args: argparse.Namespace) -> int:
                 "operation": "remove",
                 "project": args.project,
                 "authorization": args.authorize,
+                "os_action": result.os_action,
                 "policy_identity": policy.get("provenance"),
                 "policy_definition": "RETAINED_FOR_AUDIT",
                 "enforcement": "REMOVED",
@@ -1068,6 +1111,31 @@ def _network_command(args: argparse.Namespace) -> int:
         )
 
     raise LabError(f"unhandled network command: {command}")
+
+
+def _os_command(args: argparse.Namespace) -> int:
+    if args.os_command != "inspect":
+        raise LabError(f"unhandled OS command: {args.os_command}")
+    report = EnforcementCoordinator(ROOT).inspect_platforms(
+        project=args.project,
+        context=args.context,
+    )
+    _emit(report)
+    statuses = []
+    for platform_report in (
+        report["linux"],
+        report["docker"],
+        report["windows"],
+        report["wsl"],
+    ):
+        statuses.extend(
+            item.get("status", "UNKNOWN")
+            for item in platform_report.values()
+            if isinstance(item, dict)
+        )
+    return 0 if statuses and all(
+        status in {"PASS", "NOT_APPLICABLE"} for status in statuses
+    ) else 1
 
 
 def _runtime_command(args: argparse.Namespace) -> int:
@@ -1244,13 +1312,17 @@ def main(argv: list[str] | None = None) -> int:
             if args.json:
                 _emit(value)
             else:
-                print("\n".join(sorted(value)))
                 if not value:
                     print("No approved materials are registered.")
+                else:
+                    print("\n".join(sorted(value)))
             return 0
 
         if args.command == "networks":
             return _network_command(args)
+
+        if args.command == "os":
+            return _os_command(args)
 
         if args.command == "runtime":
             return _runtime_command(args)

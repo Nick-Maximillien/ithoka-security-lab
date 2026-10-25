@@ -15,7 +15,9 @@ from lab.runtime import (
     runtime_status,
     runtime_stop,
     runtime_verify,
+    _network_readiness,
 )
+from lab.networks import resolve_network_policy
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,8 +81,8 @@ class RuntimeTests(unittest.TestCase):
             runtime_start(self.root)
         self.assertEqual(runtime_status(self.root)["status"], "STOPPED")
         verified = runtime_verify(self.root)
-        self.assertEqual(verified["policy_support"], "unsupported")
-        self.assertEqual(verified["machine_prerequisites"], "not-ready")
+        self.assertEqual(verified["policy_support"], "FAIL")
+        self.assertEqual(verified["machine_prerequisites"], "FAIL")
         self.assertFalse(verified["healthy"])
         self.assertIn(
             "external_networks=runtime-acceptance-unavailable",
@@ -116,6 +118,35 @@ class RuntimeTests(unittest.TestCase):
             ):
                 runtime_start(self.root)
         self.assertEqual(runtime_status(self.root)["status"], "STOPPED")
+
+    def test_docker_unknown_blocks_readiness_before_acceptance_probes(self):
+        policy = resolve_network_policy(self.root, "isolated")
+        project = "sec-lab-i-runtime-inspection"
+        evidence_dir = self.root / "state" / "network-boundary"
+        evidence_dir.mkdir(parents=True)
+        (evidence_dir / f"{project}-network-policy.json").write_text(
+            json.dumps(policy),
+            encoding="utf-8",
+        )
+        with (
+            patch(
+                "lab.runtime.inspect_docker_project",
+                return_value={
+                    "status": "UNKNOWN",
+                    "reason": "daemon unavailable",
+                },
+            ),
+            patch("lab.runtime._execute_policy_acceptance") as acceptance,
+        ):
+            readiness = _network_readiness(self.root, policy)
+
+        self.assertFalse(readiness["ready"])
+        self.assertEqual(
+            readiness["docker_runtime_inspection"]["status"],
+            "UNKNOWN",
+        )
+        self.assertEqual(readiness["controls_applied"], "NOT_TESTED")
+        acceptance.assert_not_called()
 
     def test_running_runtime_revalidates_policy_before_idempotent_start(self):
         with (

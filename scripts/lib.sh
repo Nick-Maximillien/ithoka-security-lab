@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -6,8 +5,19 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 CONFIG_FILE="${LAB_CONFIG_FILE:-$ROOT_DIR/config/lab.env}"
 EXAMPLE_CONFIG="$ROOT_DIR/config/lab.env.example"
+_CAPTURE_APPROVAL_WAS_SET="${CAPTURE_APPROVAL+x}"
+_CAPTURE_APPROVAL_OVERRIDE="${CAPTURE_APPROVAL-}"
+_MAINTENANCE_APPROVAL_WAS_SET="${MAINTENANCE_APPROVAL+x}"
+_MAINTENANCE_APPROVAL_OVERRIDE="${MAINTENANCE_APPROVAL-}"
 
-if [[ -f "$CONFIG_FILE" ]]; then
+if [[ -n "${LAB_CONFIG_FILE:-}" ]]; then
+  [[ -f "$CONFIG_FILE" ]] || {
+    printf 'ERROR: selected configuration is missing: %s\n' "$CONFIG_FILE" >&2
+    exit 1
+  }
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+elif [[ -f "$CONFIG_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$CONFIG_FILE"
 elif [[ -f "$EXAMPLE_CONFIG" ]]; then
@@ -16,6 +26,13 @@ elif [[ -f "$EXAMPLE_CONFIG" ]]; then
 else
   printf 'ERROR: configuration missing: %s\n' "$CONFIG_FILE" >&2
   exit 1
+fi
+
+if [[ "$_CAPTURE_APPROVAL_WAS_SET" == "x" ]]; then
+  CAPTURE_APPROVAL="$_CAPTURE_APPROVAL_OVERRIDE"
+fi
+if [[ "$_MAINTENANCE_APPROVAL_WAS_SET" == "x" ]]; then
+  MAINTENANCE_APPROVAL="$_MAINTENANCE_APPROVAL_OVERRIDE"
 fi
 
 : "${LAB_PROJECT:?LAB_PROJECT is required}"
@@ -180,4 +197,3 @@ check_active_run() {
       ;;
   esac
 }
-```

@@ -192,20 +192,36 @@ def _inspect(
 def init_experiment(experiment_id: str, root: Path = ROOT) -> Path:
     """Create a new disposable workspace and its evidence directories."""
     root = _root_path(root)
-    directory = _workspace(root, experiment_id)
+    if not isinstance(experiment_id, str) or not ID_PATTERN.fullmatch(experiment_id):
+        raise LabError(
+            "experiment ID must contain only lowercase letters, digits, and hyphens"
+        )
 
+    state_directory = root / "state"
+    parent = state_directory / "experiments"
+    for directory in (state_directory, parent):
+        if directory.is_symlink():
+            raise LabError(
+                f"experiment parent directory must not be a symlink: {directory}"
+            )
+        if directory.exists() and not directory.is_dir():
+            raise LabError(
+                f"experiment parent is not a directory: {directory}"
+            )
+        directory.mkdir(exist_ok=True)
+        if directory.is_symlink():
+            raise LabError(
+                f"experiment parent directory must not be a symlink: {directory}"
+            )
+
+    parent = ensure_inside(root, parent, "experiment parent directory")
+    directory = parent / experiment_id
     if directory.exists() or directory.is_symlink():
         raise LabError(f"experiment already exists: {experiment_id}")
 
-    parent = directory.parent
-    parent.mkdir(parents=True, exist_ok=True)
-
-    # Do not follow a symlinked state/experiments parent.
-    if parent.is_symlink():
-        raise LabError("experiment parent directory must not be a symlink")
-
     try:
         directory.mkdir()
+        directory = ensure_inside(root, directory, "experiment workspace")
         (directory / "workspace").mkdir()
         (directory / "evidence").mkdir()
         (directory / "records").mkdir()
@@ -312,13 +328,16 @@ def reset_experiment(
 
 def _preservation_destination(root: Path, experiment_id: str) -> Path:
     destination = root / "evidence-staging" / "experiments" / experiment_id
-    destination = ensure_inside(
-        root,
-        destination,
-        "preserved experiment evidence",
-    )
+    try:
+        resolved_root = root.resolve(strict=True)
+        destination = destination.resolve(strict=False)
+        destination.relative_to(resolved_root)
+    except (OSError, ValueError) as exc:
+        raise LabError(
+            "preserved experiment evidence must remain inside the repository"
+        ) from exc
 
-    if destination.is_symlink():
+    if destination == resolved_root or destination.is_symlink():
         raise LabError("preserved evidence destination must not be a symlink")
 
     return destination

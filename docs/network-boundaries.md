@@ -35,6 +35,40 @@ network. Preflight's `ready` field means only that machine prerequisites were
 observed; inspect its separate `policy_support` result before considering a
 runtime.
 
+`networks discover` also records IPv6 interface state, IPv4/IPv6 forwarding
+settings, routes, and resolver configuration. It reports configured proxy
+environment variable names only; values are redacted. Missing tools or
+unreadable state are reported as unavailable observations, not as proof that a
+boundary is absent or enforced.
+
+For the structured OS API report, run `python3 lab/lab.py os inspect`; add
+`--project sec-lab-i-<id>` to include the effective Docker containers,
+networks, and published port bindings for one lab project. Linux interfaces,
+IPv4/IPv6 routes and forwarding, kernel firewall rules/counters, listening
+sockets, process names, mounts, resolver configuration, and proxy variable
+names are queried read-only. Windows firewall/interface/route/socket/process
+data is queried separately through PowerShell when available. WSL guest state
+is reported separately from the Windows-to-WSL boundary, which remains
+`UNKNOWN` without an authorized path test. Collection `PASS` means the
+observation was obtained; it does not mean that the policy was enforced.
+
+Inspect a constructed project without changing it:
+
+```bash
+python3 lab/lab.py networks inspect-docker sec-lab-i-<id>
+```
+
+The inspection compares the active and operator-approved Docker contexts,
+blocks remote Docker endpoints, records the discoverable daemon identity, and
+checks the project's owned internal bridge and effective container ownership,
+image content IDs, network attachments, host-port bindings, mounts,
+privilege/capability/device settings, user, root filesystem, temporary
+filesystem limits, resource limits, and `no-new-privileges`.
+Container environment values are not returned. Incomplete inspection reports
+`UNKNOWN`; policy violations report `FAIL`. A local Unix-socket or named-pipe
+endpoint does not prove which physical host or Windows/WSL boundary serves the
+daemon.
+
 `networks capabilities` distinguishes implemented Linux bridge enforcement
 from controls that remain unverified or unsupported. The Linux adapter uses
 project-owned IPv4/IPv6 chains, inserts jumps at the start of host `INPUT`,
@@ -45,8 +79,10 @@ structural checks are not packet-level runtime acceptance.
 `networks apply` requires the already-created, correctly labeled Compose
 project network. The supported creation lifecycle is
 `construct-investigation`: Compose creates the network, the adapter applies and
-verifies the boundary, and only then does Compose start services. Do not create
-a substitute network manually or run `networks apply` before construction.
+verifies the boundary, and only then does Compose start services. Effective
+Docker state is inspected before readiness and again after service start; a
+non-`PASS` post-start result enters the existing scoped cleanup path. Do not
+create a substitute network manually or run `networks apply` before construction.
 
 The Linux/WSL adapter applies and verifies project-owned deny-mode IPv4/IPv6
 chains. The supplied profiles still require Windows-host, dedicated DNS,

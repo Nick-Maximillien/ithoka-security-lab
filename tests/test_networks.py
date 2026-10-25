@@ -173,16 +173,31 @@ class NetworkPolicyTests(unittest.TestCase):
         capabilities = network_capabilities()
         controls = capabilities["controls"]
         for name in ("ipv4", "ipv6", "lab_ingress", "lab_egress"):
-            self.assertEqual(controls[name]["status"], "supported")
+            self.assertEqual(
+                controls[name]["status"],
+                "adapter-declared-only",
+            )
+            self.assertEqual(
+                controls[name]["enforcement_state"],
+                "not-verified",
+            )
         for name in ("docker_networks", "filesystem", "resource_access"):
-            self.assertEqual(controls[name]["status"], "supported")
+            self.assertEqual(
+                controls[name]["status"],
+                "configuration-validation-only",
+            )
         self.assertEqual(
-            capabilities["enforcement_state"],
-            "not-verified-until-project-apply-and-verify",
+            capabilities["overall_status"],
+            "not-verified",
         )
-        self.assertEqual(controls["external_networks"]["status"], "supported")
-        self.assertEqual(controls["external_networks"]["acceptance"], "not-implemented")
-        self.assertEqual(controls["external_networks"]["missing"], ["runtime_acceptance"])
+        self.assertEqual(
+            controls["external_networks"]["status"],
+            "adapter-declared-only",
+        )
+        self.assertEqual(
+            controls["external_networks"]["enforcement_state"],
+            "not-verified",
+        )
         for name in ("windows_host", "dns", "proxies"):
             self.assertEqual(controls[name]["status"], "unsupported")
         self.assertEqual(capabilities["runtime_acceptance"], "not-run")
@@ -263,8 +278,17 @@ class NetworkPolicyTests(unittest.TestCase):
         self.assertEqual(config["operator_confirmed"]["approved_docker_context"], "default")
         plan = build_enforcement_plan(self.root, "isolated", config)
         self.assertFalse(plan["supported"])
-        self.assertIn("windows_host=windows-firewall-required", plan["capability_error"])
-        self.assertEqual(plan["apply_order"][-1], "verify")
+        self.assertIn("windows_host", plan["capability_error"])
+        self.assertTrue(
+            plan["capability_error"]["windows_host"].startswith(
+                "windows-firewall-required"
+            )
+        )
+        self.assertEqual(plan["apply_order"][-1], "record_evidence")
+        self.assertLess(
+            plan["apply_order"].index("verify_rule_state"),
+            plan["apply_order"].index("run_runtime_acceptance"),
+        )
         self.assertTrue(plan["read_only"])
 
     def test_machine_preflight_checks_context_defaults_and_root_firewall_reads(self):
@@ -322,10 +346,20 @@ class NetworkPolicyTests(unittest.TestCase):
                 validate_network_setup(self.root, runner=runner)
 
     def test_discovery_is_read_only_and_reports_observations(self):
-        inventory = discover_network_inventory()
+        with patch.dict("os.environ", {"HTTPS_PROXY": "https://secret.example"}):
+            inventory = discover_network_inventory()
         self.assertTrue(inventory["read_only"])
         self.assertIn("interfaces", inventory["observations"])
+        self.assertIn("interfaces_ipv6", inventory["observations"])
+        self.assertIn("ipv4_forwarding", inventory["observations"])
+        self.assertIn("ipv6_forwarding", inventory["observations"])
         self.assertIn("docker_context", inventory["availability"])
+        self.assertTrue(inventory["proxy_environment"]["values_redacted"])
+        self.assertIn(
+            "HTTPS_PROXY",
+            inventory["proxy_environment"]["configured_variable_names"],
+        )
+        self.assertNotIn("https://secret.example", json.dumps(inventory))
 
     def test_machine_configuration_can_be_created_without_confirming_values(self):
         destination = self.root / "config" / "networks" / "machine.yaml"

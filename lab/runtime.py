@@ -23,13 +23,13 @@ from typing import Any
 
 from .foundation import LabError, ROOT, load_yaml, utc_now
 from .networks import (
-    inspect_owned_network,
     policy_json,
     resolve_network_policy,
     validate_policy,
     validate_network_setup,
     validate_runtime_support,
 )
+from .enforcement import EnforcementCoordinator, inspect_docker_project
 
 RUNTIME_STATE = "runtime/runtime.json"
 NETWORK_BOUNDARY_DIR = "state/network-boundary"
@@ -713,57 +713,62 @@ def _network_readiness(root: Path, policy: dict[str, Any]) -> dict[str, Any]:
     project = policy_path.name.removesuffix("-network-policy.json")
 
     try:
-        network = inspect_owned_network(project)
+        docker_inspection = EnforcementCoordinator(
+            root,
+            docker_inspector=inspect_docker_project,
+        ).inspect_docker(project).to_dict()
     except LabError as exc:
+        docker_inspection = {
+            "status": "UNKNOWN",
+            "project": project,
+            "read_only": True,
+            "reason": f"Docker runtime inspection could not be completed: {exc}",
+            "findings": [],
+        }
+    if docker_inspection.get("status") != PASS:
+        status = docker_inspection.get("status", NOT_TESTED)
         return {
             "ready": False,
-            "controls_applied": FAIL,
+            "controls_applied": NOT_TESTED,
             "effective_behavior": NOT_TESTED,
             "runtime_acceptance": NOT_TESTED,
+            "docker_runtime_inspection": docker_inspection,
             "acceptance": {
                 "status": NOT_TESTED,
-                "reason": f"owned network inspection failed: {exc}",
+                "reason": (
+                    "acceptance probes were not run because Docker runtime "
+                    f"inspection returned {status}"
+                ),
                 "boundaries": {},
                 "tests": [],
             },
-            "reason": f"cannot inspect the owned investigation network: {exc}",
+            "reason": (
+                "Docker runtime inspection did not pass: "
+                f"{docker_inspection.get('reason', status)}"
+            ),
         }
 
-    # Firewall verification is enforcement evidence, not behavioral acceptance.
-    command = [
-        "bash",
-        str(root / "scripts" / "network-boundary.sh"),
-        "verify",
-        project,
-        str(policy_path),
-    ]
+    network_details = docker_inspection.get("network", {})
+    network = {
+        "network_id": network_details.get("network_id"),
+        "network_name": network_details.get("network_name"),
+        "bridge": network_details.get("bridge"),
+    }
 
-    try:
-        verified = subprocess.run(
-            command,
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-            shell=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        enforcement_status = ERROR
-        enforcement_reason = f"cannot execute firewall verification: {exc}"
-        enforcement_output = ""
-    else:
-        enforcement_output = (
-            verified.stderr.strip() or verified.stdout.strip()
-        )
-        if verified.returncode == 0:
-            enforcement_status = PASS
-            enforcement_reason = None
-        else:
-            enforcement_status = FAIL
-            enforcement_reason = (
-                enforcement_output or "owned firewall verification failed"
-            )
+    # Firewall verification is enforcement evidence, not behavioral acceptance.
+    command_environment = os.environ.copy()
+    command_environment["DOCKER_CONTEXT"] = docker_inspection["active_context"]
+    linux_enforcement = EnforcementCoordinator(root).verify_linux_boundary(
+        project,
+        policy_path,
+        environment=command_environment,
+    )
+    enforcement_status = linux_enforcement.status.value
+    enforcement_reason = (
+        None
+        if linux_enforcement.status.value == PASS
+        else linux_enforcement.reason
+    )
 
     # Execute probes regardless of the firewall verifier's result so the
     # evidence shows actual observed behavior. A probe pass cannot override
@@ -786,9 +791,11 @@ def _network_readiness(root: Path, policy: dict[str, Any]) -> dict[str, Any]:
         "enforcement": {
             "status": enforcement_status,
             "reason": enforcement_reason,
-            "verification_output": enforcement_output,
+            "verification": linux_enforcement.to_dict(),
             "verified_utc": utc_now(),
         },
+        "linux_os_observations": linux_enforcement.details.get("after_firewall"),
+        "docker_runtime_inspection": docker_inspection,
         "acceptance": acceptance,
         "effective_behavior": acceptance["status"],
         "runtime_acceptance": acceptance["status"],
@@ -805,7 +812,8 @@ def _network_readiness(root: Path, policy: dict[str, Any]) -> dict[str, Any]:
     runtime_acceptance = acceptance["status"]
 
     ready = (
-        enforcement_status == PASS
+        docker_inspection.get("status") == PASS
+        and enforcement_status == PASS
         and effective_behavior == PASS
         and runtime_acceptance == PASS
     )
@@ -814,6 +822,11 @@ def _network_readiness(root: Path, policy: dict[str, Any]) -> dict[str, Any]:
     if enforcement_status != PASS:
         reasons.append(
             enforcement_reason or f"enforcement status is {enforcement_status}"
+        )
+    if docker_inspection.get("status") != PASS:
+        reasons.append(
+            "Docker runtime inspection status is "
+            f"{docker_inspection.get('status', NOT_TESTED)}"
         )
     if effective_behavior != PASS:
         reasons.append(
@@ -825,6 +838,7 @@ def _network_readiness(root: Path, policy: dict[str, Any]) -> dict[str, Any]:
         "project": project,
         "policy_identity": policy_identity,
         "network_id": network.get("network_id"),
+        "docker_runtime_inspection": docker_inspection,
         "controls_applied": enforcement_status,
         "effective_behavior": effective_behavior,
         "runtime_acceptance": runtime_acceptance,
@@ -954,6 +968,10 @@ def runtime_verify(root: Path = ROOT) -> dict[str, Any]:
         "machine_prerequisites": PASS if machine_error is None else FAIL,
         "machine_error": machine_error,
         "controls_applied": network_readiness["controls_applied"],
+        "docker_runtime_inspection": network_readiness.get(
+            "docker_runtime_inspection",
+            {"status": NOT_TESTED, "reason": "not inspected"},
+        ),
         "effective_behavior": network_readiness["effective_behavior"],
         "runtime_acceptance": network_readiness["runtime_acceptance"],
         "acceptance": acceptance,
@@ -976,6 +994,7 @@ def runtime_verify(root: Path = ROOT) -> dict[str, Any]:
         and policy_error is None
         and machine_error is None
         and result["controls_applied"] == PASS
+        and result["docker_runtime_inspection"].get("status") == PASS
         and result["effective_behavior"] == PASS
         and result["runtime_acceptance"] == PASS
         and not active_policy_drift

@@ -55,6 +55,14 @@ from .networks import (
     resolve_network_policy,
     validate_runtime_support,
 )
+from .enforcement import inspect_docker_project
+from .osapi.actions import (
+    OSActionRequest,
+    OSActionResult,
+    OSActionStatus,
+    execute_network_boundary_action,
+    execute_os_action,
+)
 
 # Runtime's readiness helper performs fresh policy-bound acceptance execution.
 # It is intentionally reused so construction and runtime share the same
@@ -88,6 +96,7 @@ LIFECYCLE = (
     "verify_enforcement",
     "execute_acceptance",
     "start_workloads",
+    "verify_running_workloads",
 )
 
 
@@ -149,6 +158,31 @@ def _run(
             + (f": {detail}" if detail else "")
         )
 
+    return result
+
+
+def _run_compose_action(
+    action: str,
+    project: str,
+    compose_file: Path,
+    root: Path,
+    runner: Any,
+) -> OSActionResult:
+    result = execute_os_action(
+        OSActionRequest(
+            platform="docker",
+            operation=f"docker.compose.{action}",
+            target=project,
+            repository_root=root,
+            arguments={"compose_file": str(compose_file)},
+        ),
+        runner=runner,
+    )
+    if result.status is not OSActionStatus.SUCCEEDED:
+        raise LabError(
+            f"Docker Compose {action} did not pass: "
+            f"{result.reason or result.status.value}"
+        )
     return result
 
 
@@ -261,9 +295,6 @@ def validate_investigation(path: Path, root: Path = ROOT) -> dict[str, Any]:
         network_policy.get("profile"),
         network_policy.get("overrides"),
     )
-
-    # Policy support is checked before any resource creation.
-    validate_runtime_support(effective_policy)
 
     validate_compose_document(
         compose,
@@ -522,8 +553,25 @@ def write_plan(
     root: Path = ROOT,
 ) -> Path:
     plan = build_construction_plan(path, investigation_id, root)
-    destination = ensure_inside(root, output, "construction plan")
+    root_path = Path(root).resolve(strict=True)
+    candidate = Path(output)
+    if not candidate.is_absolute():
+        candidate = root_path / candidate
+    if candidate.is_symlink():
+        raise LabError(f"construction plan destination must not be a symlink: {candidate}")
+    destination = candidate.resolve(strict=False)
+    try:
+        destination.relative_to(root_path)
+    except ValueError as exc:
+        raise LabError(
+            f"construction plan must remain inside the repository: {output}"
+        ) from exc
+    if destination == root_path:
+        raise LabError("construction plan cannot replace the repository root")
     destination.parent.mkdir(parents=True, exist_ok=True)
+    ensure_inside(root_path, destination.parent, "construction plan directory")
+    if destination.is_symlink():
+        raise LabError(f"construction plan destination must not be a symlink: {destination}")
     destination.write_text(
         json.dumps(plan, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -740,19 +788,6 @@ def _assert_project_owned(
     return found
 
 
-def _boundary_command(
-    action: str,
-    project: str,
-    policy_file: Path,
-    root: Path,
-) -> list[str]:
-    script = root / "scripts" / "network-boundary.sh"
-    if not script.is_file():
-        raise LabError(f"network-boundary enforcement script is missing: {script}")
-
-    return ["bash", str(script), action, project, str(policy_file)]
-
-
 def _run_boundary(
     action: str,
     project: str,
@@ -760,35 +795,31 @@ def _run_boundary(
     runner: Any,
     root: Path,
 ) -> dict[str, Any]:
-    command = _boundary_command(action, project, policy_file, root)
-
-    try:
-        result = runner(
-            command,
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-            shell=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return {
-            "action": action,
-            "status": ERROR,
-            "reason": str(exc),
-            "command": command,
-            "executed_utc": utc_now(),
-        }
-
-    passed = result.returncode == 0
-    detail = (result.stderr or "").strip() or (result.stdout or "").strip()
-
+    result = execute_network_boundary_action(
+        action,
+        project,
+        policy_file,
+        root,
+        runner=runner,
+    )
+    passed = result.status is OSActionStatus.SUCCEEDED
+    command = (
+        [result.native_executable, *result.arguments]
+        if result.native_executable
+        else []
+    )
     return {
         "action": action,
-        "status": PASS if passed else FAIL,
+        "status": (
+            PASS
+            if passed
+            else FAIL
+            if result.status in {OSActionStatus.FAILED, OSActionStatus.TIMED_OUT}
+            else ERROR
+        ),
+        "execution": result.to_dict(),
         "returncode": result.returncode,
-        "reason": None if passed else (detail or f"{action} returned non-zero"),
+        "reason": result.reason,
         "stdout": result.stdout,
         "stderr": result.stderr,
         "command": command,
@@ -900,26 +931,20 @@ def _prepare_compose_resources(
     root: Path,
     runner: Any,
 ) -> dict[str, Any]:
-    command = [
-        "docker",
-        "compose",
-        "--project-name",
-        project,
-        "--file",
-        str(runtime_file),
+    result = _run_compose_action(
         "create",
-        "--no-build",
-        "--pull",
-        "never",
-    ]
-
-    result = _run(command, runner, root, timeout=120)
+        project,
+        runtime_file,
+        root,
+        runner,
+    )
     return {
         "status": PASS,
         "operation": "prepare_resources",
         "meaning": "Compose resources were created; workloads have not been started",
         "stdout": result.stdout.strip(),
-        "command": command,
+        "command": [result.native_executable, *result.arguments],
+        "os_action": result.to_dict(),
         "completed_utc": utc_now(),
     }
 
@@ -1010,27 +1035,16 @@ def _cleanup_failed_construction(
     # Compose start may partially start them. Stop first; never assume all are
     # stopped just because the start command returned an error.
     if runtime_file is not None:
-        stopped = runner(
-            [
-                "docker",
-                "compose",
-                "--project-name",
-                project,
-                "--file",
-                str(runtime_file),
+        try:
+            _run_compose_action(
                 "stop",
-            ],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-            shell=False,
-        )
-        if stopped.returncode != 0:
-            errors.append(
-                f"workload stop failed: {(stopped.stderr or '').strip()}"
+                project,
+                runtime_file,
+                root,
+                runner,
             )
+        except LabError as exc:
+            errors.append(f"workload stop failed: {exc}")
 
     if boundary_apply_attempted and policy_file.is_file():
         removal = _run_boundary("remove", project, policy_file, runner, root)
@@ -1040,26 +1054,16 @@ def _cleanup_failed_construction(
             )
 
     if runtime_file is not None:
-        down = runner(
-            [
-                "docker",
-                "compose",
-                "--project-name",
-                project,
-                "--file",
-                str(runtime_file),
+        try:
+            _run_compose_action(
                 "down",
-                "--remove-orphans",
-            ],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=120,
-            shell=False,
-        )
-        if down.returncode != 0:
-            errors.append(f"project cleanup failed: {(down.stderr or '').strip()}")
+                project,
+                runtime_file,
+                root,
+                runner,
+            )
+        except LabError as exc:
+            errors.append(f"project cleanup failed: {exc}")
 
     if admission_created:
         try:
@@ -1310,24 +1314,41 @@ def construct_investigation(
         validate_runtime_support(policy)
 
         # Lifecycle stage 5: start workloads only after all prior gates pass.
-        start_command = [
-            "docker",
-            "compose",
-            "--project-name",
-            project,
-            "--file",
-            str(runtime_file),
+        started = _run_compose_action(
             "start",
-        ]
-        started = _run(start_command, runner, root, timeout=120)
+            project,
+            runtime_file,
+            root,
+            runner,
+        )
 
+        runtime_inspection = inspect_docker_project(
+            project,
+            root,
+            runner=runner,
+        )
         evidence["workloads"] = {
-            "status": PASS,
-            "command": start_command,
+            "status": runtime_inspection.get("status", ERROR),
+            "command": [started.native_executable, *started.arguments],
             "stdout": started.stdout.strip(),
+            "os_action": started.to_dict(),
             "started_utc": utc_now(),
+            "runtime_inspection": runtime_inspection,
         }
+        if runtime_inspection.get("status") != PASS:
+            evidence["workloads"]["reason"] = runtime_inspection.get(
+                "reason",
+                "post-start Docker runtime inspection did not pass",
+            )
+            _write_construction_evidence(root, project, evidence)
+            raise LabError(
+                "construction refused after workload start: Docker runtime "
+                "inspection did not pass: "
+                f"{evidence['workloads']['reason']}"
+            )
+
         evidence["lifecycle"]["completed"].append("start_workloads")
+        evidence["lifecycle"]["completed"].append("verify_running_workloads")
         evidence["status"] = "CONSTRUCTED"
         evidence["constructed_utc"] = utc_now()
         evidence["authorization"] = authorize
@@ -1495,28 +1516,18 @@ def dispose_investigation(
             _write_json(policy_file, policy)
 
         # Stop workloads before removing their network boundary.
-        stopped = runner(
-            [
-                "docker",
-                "compose",
-                "--project-name",
-                project,
-                "--file",
-                str(runtime_file),
+        try:
+            _run_compose_action(
                 "stop",
-            ],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-            shell=False,
-        )
-        if stopped.returncode != 0:
-            raise LabError(
-                f"disposal refused: could not stop owned workloads: "
-                f"{(stopped.stderr or '').strip()}"
+                project,
+                runtime_file,
+                root,
+                runner,
             )
+        except LabError as exc:
+            raise LabError(
+                f"disposal refused: could not stop owned workloads: {exc}"
+            ) from exc
 
         removal = _run_boundary(
             "remove",
@@ -1538,30 +1549,18 @@ def dispose_investigation(
                 f"{removal.get('reason') or removal['status']}"
             )
 
-        down = runner(
-            [
-                "docker",
-                "compose",
-                "--project-name",
-                project,
-                "--file",
-                str(runtime_file),
+        try:
+            _run_compose_action(
                 "down",
-                "--remove-orphans",
-            ],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=120,
-            shell=False,
-        )
-
-        if down.returncode != 0:
-            raise LabError(
-                f"disposal failed after boundary removal: "
-                f"{(down.stderr or '').strip()}"
+                project,
+                runtime_file,
+                root,
+                runner,
             )
+        except LabError as exc:
+            raise LabError(
+                f"disposal failed after boundary removal: {exc}"
+            ) from exc
 
         policy_file.unlink(missing_ok=True)
 

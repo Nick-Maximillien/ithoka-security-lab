@@ -11,6 +11,12 @@ topology, or registered activity catalogue. A researcher supplies an
 investigation specification and the construction engine translates it into a
 disposable, ownership-scoped environment.
 
+Start with the [operator guide](lab-set.md) for the complete setup-to-teardown
+workflow and the [system command reference](lab-set.d/commands.md) for every
+CLI, shell, and Windows host command. The [documentation index](docs/README.md)
+links the architecture, network policy, evidence, recovery, implementation
+status, and readiness records.
+
 ## Control plane
 
 - [`lab/lab.py`](lab/lab.py) — CLI entry point.
@@ -23,6 +29,12 @@ disposable, ownership-scoped environment.
 - [`lab/networks.py`](lab/networks.py) — profile resolution, machine
   configuration validation, read-only discovery, enforcement plans, and
   adapter capability checks.
+- [`lab/enforcement/`](lab/enforcement/) — typed enforcement results and the
+  Docker, Linux/WSL, and Windows host adapters used by lifecycle checks.
+- [`lab/osapi/actions.py`](lab/osapi/actions.py) — typed, allowlisted native
+  actions used by construction, boundary verification, and disposal.
+- [`lab/osapi/`](lab/osapi/) — read-only Linux, Docker, Windows, and WSL
+  observations and bounded command execution.
 - [`lab/runtime.py`](lab/runtime.py) — persistent runtime lifecycle,
   experiment admission, policy pinning, resource reservations, and
   concurrency-safe state transitions.
@@ -39,7 +51,9 @@ disposable, ownership-scoped environment.
 
 ```bash
 cd /home/maximillien/security-lab
-cp config/lab.env.example config/lab.env
+# If the engine dependency is not installed in the selected Python environment:
+python3 -m pip install -r requirements-lab-engine.txt
+if [[ ! -f config/lab.env ]]; then cp config/lab.env.example config/lab.env; fi
 python3 lab/lab.py status
 python3 lab/lab.py capabilities --json
 python3 lab/lab.py materials
@@ -71,6 +85,17 @@ its investigation is constructed from a researcher-supplied specification.
 `networks apply` requires that existing owned network and never creates it.
 Construction creates the Compose network, applies and verifies the boundary,
 and only then starts workloads.
+
+For detailed, read-only operating-system observations, run:
+
+```bash
+python3 lab/lab.py os inspect
+python3 lab/lab.py os inspect --project sec-lab-i-<id>
+```
+
+The report keeps Linux, Docker, Windows, and WSL observations separate.
+Successful inventory collection is not a security verification; unavailable
+platforms and unverified cross-boundary paths remain `UNKNOWN`.
 
 The current supplied profiles remain unsupported for readiness because Windows
 host isolation, dedicated DNS/proxy controls, and live runtime acceptance are
@@ -185,13 +210,26 @@ loopback only, keeps XSRF protection enabled, disables usage telemetry, and
 does not attach to experiment networks. Loopback forwarding from WSL to
 Windows is not itself an authentication or isolation boundary.
 
-## Safety boundary
+## Current enforcement and limitations
 
-The lab enforces internal Docker networking, rejects published ports, host
-networking, host binds, Docker socket mounts, added capabilities, privileged
-services, writable roots, and unbounded resource declarations. Docker is not a
-complete security boundary: containers share the host kernel and WSL
-integrates with Windows. No physical air-gap claim is made.
+Specification/Compose validation rejects disallowed constructs such as
+published ports, host networking, host binds, Docker socket mounts, privileged
+services, added capabilities, writable roots, and unbounded resource
+declarations. That static validation is not runtime proof. The Linux/WSL
+boundary adapter is limited to project-owned deny-mode IPv4/IPv6 bridge rules;
+the supplied profiles request additional Windows-host, DNS, proxy, and
+external-acceptance guarantees that are not currently implemented. As a
+result, those profiles fail closed and workload construction is blocked while
+those requirements remain enabled.
+
+The native OS action interface uses typed allowlisted operations: scoped Linux
+boundary-script apply/verify/remove, Docker Compose create/start/stop/down, and
+approval-gated connect/disconnect for project-owned Docker network resources.
+It does not expose arbitrary host shell execution. Native Windows mutations
+and controls of another WSL distribution are unsupported. A Docker context
+and its local socket/name checks do not prove the daemon's physical host.
+Docker containers share the Linux kernel and WSL integrates with Windows; no
+physical air-gap claim is made.
 
 The controller does not pull images, install packages, modify Windows
 firewalls/routes, change the Docker context, alter global WSL settings, or
@@ -199,13 +237,19 @@ perform global Docker pruning.
 
 ## Verification status
 
-The repository test suite currently contains 38 tests covering researcher-
-defined specification validation, policy resolution, machine configuration,
-enforcement-plan generation, runtime admission, state locking, policy
-provenance, and static safety contracts. Tests use temporary repositories and
-mocked Docker/boundary calls; they do not modify the host firewall or install
-an operational experiment.
+The repository test suite currently contains 135 tests covering researcher-
+defined specification validation, capability/material catalogs, resource
+resolution, machine configuration, enforcement planning and adapters, OS
+observations and allowlisted actions, runtime admission, effective Docker
+inspection, shell-controller contracts, state locking, policy provenance, and
+static safety contracts. Tests use temporary repositories, mocked
+Docker/boundary calls, and isolated shell fakes; they do not modify the host
+firewall or install an operational experiment. Run them from WSL with
+`python3 -m unittest discover -s tests`.
 
 Actual Docker construction, image provenance, live network behavior, packet
 capture, disposal on the target host, and Windows emergency-stop behavior
-remain separately authorized runtime acceptance work.
+remain separately authorized runtime acceptance work. The dated host-specific
+observations and their limitations are recorded in
+[`docs/readiness-inventory.md`](docs/readiness-inventory.md); re-run discovery
+and inspection before relying on them.

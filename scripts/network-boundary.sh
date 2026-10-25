@@ -23,6 +23,9 @@ UNSUPPORTED_BOUNDARIES=(
     dns
     proxies
     capture
+)
+
+CONFIGURATION_VALIDATED_BOUNDARIES=(
     docker_networks
     filesystem
     resource_access
@@ -186,12 +189,15 @@ UNSUPPORTED = {
     "dns",
     "proxies",
     "capture",
+}
+
+CONFIGURATION_VALIDATED = {
     "docker_networks",
     "filesystem",
     "resource_access",
 }
 
-EXPECTED = SUPPORTED | UNSUPPORTED
+EXPECTED = SUPPORTED | UNSUPPORTED | CONFIGURATION_VALIDATED
 
 try:
     with open(sys.argv[1], encoding="utf-8") as stream:
@@ -251,6 +257,13 @@ try:
             + ", ".join(enabled_unsupported)
         )
 
+    for name in CONFIGURATION_VALIDATED:
+        boundary = boundaries[name]
+        if boundary["enabled"] and boundary["mode"] != "deny":
+            raise ValueError(f"{name} must remain in deny mode")
+        if boundary["enabled"] and boundary["adapter"] != "docker-compose":
+            raise ValueError(f"{name} requires adapter=docker-compose")
+
     # This adapter intentionally implements a strict deny-only profile.
     for name in SUPPORTED:
         boundary = boundaries[name]
@@ -302,10 +315,16 @@ try:
 
     for name, expected in expected_verification.items():
         actual = boundaries[name]["verification"]
-        if set(actual) != expected or len(actual) != len(expected):
+        actual_set = set(actual)
+        unsupported = actual_set - expected - {"runtime_acceptance"}
+        if (
+            not expected.issubset(actual_set)
+            or unsupported
+            or len(actual) != len(actual_set)
+        ):
             raise ValueError(
-                f"{name}.verification must contain exactly "
-                f"{sorted(expected)!r}; got {actual!r}"
+                f"{name}.verification does not match the adapter contract: "
+                f"required={sorted(expected)!r}, got={actual!r}"
             )
 
     print("Policy schema: VALID")
