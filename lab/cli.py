@@ -34,6 +34,7 @@ from .networks import (
     configure_machine,
     discover_network_inventory,
     inspect_owned_network,
+    inspect_docker_project,
     policy_json,
     resolve_project_network_policy,
     resolve_network_policy,
@@ -43,7 +44,7 @@ from .networks import (
     validate_runtime_support,
     validate_network_configuration,
 )
-from .enforcement import EnforcementCoordinator, inspect_docker_project
+from .enforcement import EnforcementCoordinator
 from .osapi.actions import execute_network_boundary_action
 from .workspace import (
     collect_evidence,

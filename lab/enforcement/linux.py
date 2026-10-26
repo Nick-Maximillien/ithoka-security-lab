@@ -1,3 +1,4 @@
+
 """Scoped Linux/WSL network-boundary adapter."""
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ..foundation import LabError, ensure_inside
+from ..osapi.actions import OSActionStatus, execute_network_boundary_action
 from ..osapi.linux import (
     inspect_firewall,
     inspect_forwarding,
@@ -23,11 +25,12 @@ from ..osapi.linux import (
     inspect_sysctl,
 )
 from ..osapi.models import OSObservation
-from ..osapi.actions import OSActionStatus, execute_network_boundary_action
 from .models import EnforcementResult, EnforcementScope, EnforcementStatus
+
 
 _PROJECT_RE = re.compile(r"sec-lab-i-[a-z0-9][a-z0-9-]{0,31}")
 _ACTIONS = {"apply", "verify", "remove"}
+_HELPER_PATH = Path("/usr/local/sbin/security-lab-firewall")
 
 
 def _verify_project_chains(
@@ -36,16 +39,19 @@ def _verify_project_chains(
     *,
     should_exist: bool,
 ) -> dict[str, Any]:
+    """Verify the expected project-owned chains in the observed kernel rules."""
     if observation.status is not EnforcementStatus.PASS:
         return {
             "status": EnforcementStatus.UNKNOWN.value,
             "reason": "effective IPv4/IPv6 firewall state was not fully observed",
         }
+
     if not isinstance(observation.values, dict):
         return {
             "status": EnforcementStatus.UNKNOWN.value,
             "reason": "effective IPv4/IPv6 firewall state is malformed",
         }
+
     suffix = hashlib.sha256(project.encode("utf-8")).hexdigest()[:10]
     expected = {
         "ipv4": {
@@ -57,7 +63,9 @@ def _verify_project_chains(
             f"SLX{suffix}E6",
         },
     }
-    results = {}
+
+    results: dict[str, Any] = {}
+
     for family, expected_chains in expected.items():
         state = observation.values.get(family)
         if not isinstance(state, dict):
@@ -65,13 +73,16 @@ def _verify_project_chains(
                 "status": EnforcementStatus.UNKNOWN.value,
                 "reason": f"{family} firewall state is missing",
             }
+
         declarations = state.get("chains")
         rules = state.get("rules")
+
         if not isinstance(declarations, list) or not isinstance(rules, list):
             return {
                 "status": EnforcementStatus.UNKNOWN.value,
                 "reason": f"{family} chains or rules are malformed",
             }
+
         declared_names = {
             item.get("name")
             for item in declarations
@@ -82,15 +93,21 @@ def _verify_project_chains(
             for item in rules
             if isinstance(item, dict) and item.get("table") == "filter"
         }
+
         present_chains = sorted(expected_chains & declared_names)
         present_refs = sorted(expected_chains & references)
-        passed = (
-            expected_chains <= declared_names
-            and expected_chains <= references
-            if should_exist
-            else not expected_chains & declared_names
-            and not expected_chains & references
-        )
+
+        if should_exist:
+            passed = (
+                expected_chains <= declared_names
+                and expected_chains <= references
+            )
+        else:
+            passed = (
+                not (expected_chains & declared_names)
+                and not (expected_chains & references)
+            )
+
         results[family] = {
             "status": (
                 EnforcementStatus.PASS.value
@@ -101,17 +118,22 @@ def _verify_project_chains(
             "observed_chains": present_chains,
             "observed_jump_targets": present_refs,
         }
+
         if not passed:
             return {
                 "status": EnforcementStatus.FAIL.value,
                 "reason": f"{family} owned chain state did not match expectation",
                 "families": results,
             }
-    return {"status": EnforcementStatus.PASS.value, "families": results}
+
+    return {
+        "status": EnforcementStatus.PASS.value,
+        "families": results,
+    }
 
 
 class LinuxWslAdapter:
-    """Use the repository's owned-rule script; never accepts arbitrary argv."""
+    """Use the installed, validated security-lab-firewall helper."""
 
     def __init__(
         self,
@@ -121,7 +143,9 @@ class LinuxWslAdapter:
     ) -> None:
         self.root = root.resolve()
         self.runner = runner
-        self.environment = environment or os.environ.copy()
+        self.environment = (
+            environment if environment is not None else os.environ.copy()
+        )
 
     def inspect(self) -> EnforcementResult:
         observations = {
@@ -136,6 +160,7 @@ class LinuxWslAdapter:
             "proxies": inspect_proxy_environment().to_dict(),
             "mounts": inspect_mounts().to_dict(),
         }
+
         return EnforcementResult(
             operation="inspect",
             status=EnforcementStatus.UNKNOWN,
@@ -158,11 +183,22 @@ class LinuxWslAdapter:
         approval_reference: str | None,
     ) -> EnforcementResult:
         applied = self._execute(
-            "apply", project, policy_file, approval_reference
+            "apply",
+            project,
+            policy_file,
+            approval_reference,
         )
+
         if applied.status is not EnforcementStatus.PASS:
             return applied
-        verified = self._execute("verify", project, policy_file, None)
+
+        verified = self._execute(
+            "verify",
+            project,
+            policy_file,
+            None,
+        )
+
         restoration = None
         if verified.status is not EnforcementStatus.PASS:
             restoration = self._execute(
@@ -171,6 +207,7 @@ class LinuxWslAdapter:
                 policy_file,
                 approval_reference,
             )
+
         return EnforcementResult(
             operation="apply",
             status=verified.status,
@@ -179,7 +216,10 @@ class LinuxWslAdapter:
             reason=(
                 "apply completed and independent verification passed"
                 if verified.status is EnforcementStatus.PASS
-                else f"apply completed but independent verification was {verified.status.value}"
+                else (
+                    "apply completed but independent verification was "
+                    f"{verified.status.value}"
+                )
             ),
             findings=verified.findings,
             details={
@@ -192,7 +232,11 @@ class LinuxWslAdapter:
             },
         )
 
-    def verify(self, project: str, policy_file: Path) -> EnforcementResult:
+    def verify(
+        self,
+        project: str,
+        policy_file: Path,
+    ) -> EnforcementResult:
         return self._execute("verify", project, policy_file, None)
 
     def restore(
@@ -201,7 +245,12 @@ class LinuxWslAdapter:
         policy_file: Path,
         approval_reference: str | None,
     ) -> EnforcementResult:
-        return self._execute("remove", project, policy_file, approval_reference)
+        return self._execute(
+            "remove",
+            project,
+            policy_file,
+            approval_reference,
+        )
 
     def _execute(
         self,
@@ -212,9 +261,10 @@ class LinuxWslAdapter:
     ) -> EnforcementResult:
         scope = EnforcementScope(
             platform="linux-wsl",
-            adapter="network-boundary.sh",
+            adapter=_HELPER_PATH.name,
             project=project,
         )
+
         if (
             action not in _ACTIONS
             or not isinstance(project, str)
@@ -227,6 +277,7 @@ class LinuxWslAdapter:
                 read_only=action == "verify",
                 reason="unsupported action or invalid owned project identifier",
             )
+
         if action in {"apply", "remove"} and (
             not isinstance(approval_reference, str)
             or not approval_reference.strip()
@@ -244,7 +295,20 @@ class LinuxWslAdapter:
             if action in {"apply", "remove"}
             else None
         )
+
+        # Reject a symlink at the supplied policy path before resolving it.
+        # Checking only the resolved path can hide that the original path
+        # was a symlink.
         try:
+            if policy_file.is_symlink():
+                return EnforcementResult(
+                    operation=action,
+                    status=EnforcementStatus.BLOCKED,
+                    scope=scope,
+                    read_only=action == "verify",
+                    reason="pinned policy must not be a symlink",
+                )
+
             policy = ensure_inside(
                 self.root,
                 policy_file,
@@ -258,24 +322,27 @@ class LinuxWslAdapter:
                 read_only=action == "verify",
                 reason=f"policy path is outside the repository: {exc}",
             )
+
         if not policy.is_file() or policy.is_symlink():
             return EnforcementResult(
                 operation=action,
                 status=EnforcementStatus.BLOCKED,
                 scope=scope,
                 read_only=action == "verify",
-                reason="pinned policy must be an existing regular non-symlink file",
+                reason=(
+                    "pinned policy must be an existing regular "
+                    "non-symlink file"
+                ),
             )
 
-        script = self.root / "scripts" / "network-boundary.sh"
-        if not script.is_file() or script.is_symlink():
-            return EnforcementResult(
-                operation=action,
-                status=EnforcementStatus.UNKNOWN,
-                scope=scope,
-                read_only=action == "verify",
-                reason="owned network-boundary adapter is unavailable",
-            )
+        # The installed helper is the enforcement entry point.
+        # Do not require scripts/network-boundary.sh to exist in the
+        # repository: that legacy script is not the installed interface.
+        #
+        # execute_network_boundary_action is responsible for validating
+        # and invoking /usr/local/sbin/security-lab-firewall, including
+        # its installation and privilege requirements.
+
         if (
             action == "apply"
             and before_firewall is not None
@@ -292,6 +359,7 @@ class LinuxWslAdapter:
                 ),
                 details={"before_firewall": before_firewall},
             )
+
         executed = execute_network_boundary_action(
             action,
             project,
@@ -301,6 +369,7 @@ class LinuxWslAdapter:
             environment=self.environment,
             docker_context=self.environment.get("DOCKER_CONTEXT"),
         )
+
         if executed.status is not OSActionStatus.SUCCEEDED:
             if executed.status in {
                 OSActionStatus.FAILED,
@@ -314,6 +383,7 @@ class LinuxWslAdapter:
                 execution_status = EnforcementStatus.BLOCKED
             else:
                 execution_status = EnforcementStatus.UNKNOWN
+
             return EnforcementResult(
                 operation=action,
                 status=execution_status,
@@ -327,6 +397,7 @@ class LinuxWslAdapter:
             )
 
         after_firewall = inspect_firewall(self.runner)
+
         if after_firewall.status is not EnforcementStatus.PASS:
             return EnforcementResult(
                 operation=action,
@@ -343,22 +414,25 @@ class LinuxWslAdapter:
                     "after_firewall": after_firewall.to_dict(),
                 },
             )
+
         kernel_verification = _verify_project_chains(
             after_firewall,
             project,
             should_exist=action != "remove",
         )
+
         if kernel_verification["status"] != EnforcementStatus.PASS.value:
             return EnforcementResult(
                 operation=action,
-                status=EnforcementStatus(
-                    kernel_verification["status"]
-                ),
+                status=EnforcementStatus(kernel_verification["status"]),
                 scope=scope,
                 read_only=action == "verify",
                 reason=kernel_verification.get(
                     "reason",
-                    "fresh kernel ruleset does not contain the expected owned chains",
+                    (
+                        "fresh kernel ruleset does not contain the expected "
+                        "owned chains"
+                    ),
                 ),
                 details={
                     "os_action": executed.to_dict(),
@@ -368,8 +442,6 @@ class LinuxWslAdapter:
                 },
             )
 
-        # The shell adapter's apply/remove paths include structural checks of
-        # the exact owned chains and persist their ownership state.
         return EnforcementResult(
             operation=action,
             status=EnforcementStatus.PASS,

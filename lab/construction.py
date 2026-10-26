@@ -1,18 +1,24 @@
-"""Generic researcher-defined investigation construction.
+"""Construct and manage researcher-defined experiments inside the lab.
 
-Construction is the execution layer between an investigation specification and
-the persistent Lab Runtime.
+This module is the experiment-construction layer, not the lab-provisioning
+layer. It operates against an already-running Lab Runtime and manages only
+resources owned by the requested investigation.
 
 Lifecycle:
-    1. Validate the investigation and resolve its policy.
-    2. Validate capabilities and reserve runtime admission.
-    3. Prepare uniquely owned resources without starting workloads.
-    4. Apply the investigation's effective network policy.
-    5. Verify enforcement controls.
-    6. Execute fresh policy acceptance probes.
-    7. Start workloads only if every mandatory gate passes.
-    8. Record policy identity, enforcement evidence, acceptance evidence, and
-       runtime admission for subsequent inspection and disposal.
+    1. Validate the investigation and resolve its effective network policy.
+    2. Confirm lab runtime readiness and reserve experiment runtime admission.
+    3. Prepare uniquely owned experiment resources without starting workloads.
+    4. Verify that the experiment's Docker network was created and is owned
+       by the investigation.
+    5. Apply the experiment's effective network policy.
+    6. Verify enforcement controls.
+    7. Execute fresh policy acceptance probes.
+    8. Start workloads only after every mandatory gate passes.
+    9. Record evidence for subsequent experiment inspection and disposal.
+
+The lab infrastructure must already exist. This module does not provision
+the lab, initialize its infrastructure, or claim ownership of shared lab
+resources. Docker resources created here belong to an individual experiment.
 
 Policy definition, enforcement, and acceptance evidence are independent.
 Prepared resources and present firewall rules do not prove behavioral safety.
@@ -27,6 +33,7 @@ import os
 import re
 import subprocess
 import tempfile
+
 import yaml
 
 from pathlib import Path
@@ -51,11 +58,11 @@ from .foundation import (
 )
 from .validation import validate_compose_document
 from .networks import (
+    inspect_docker_project,
     policy_json,
     resolve_network_policy,
     validate_runtime_support,
 )
-from .enforcement import inspect_docker_project
 from .osapi.actions import (
     OSActionRequest,
     OSActionResult,
@@ -92,6 +99,7 @@ LIFECYCLE = (
     "validate_policy",
     "admit_runtime",
     "prepare_resources",
+    "verify_experiment_network",
     "apply_policy",
     "verify_enforcement",
     "execute_acceptance",
@@ -124,7 +132,9 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         )
         os.replace(temporary, path)
     except OSError as exc:
-        raise LabError(f"cannot write construction evidence {path}: {exc}") from exc
+        raise LabError(
+            f"cannot write construction evidence {path}: {exc}"
+        ) from exc
 
 
 def _run(
@@ -148,10 +158,15 @@ def _run(
             shell=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        raise LabError(f"command could not execute ({command[0]}): {exc}") from exc
+        raise LabError(
+            f"command could not execute ({command[0]}): {exc}"
+        ) from exc
 
     if result.returncode != 0:
-        detail = (result.stderr or "").strip() or (result.stdout or "").strip()
+        detail = (
+            (result.stderr or "").strip()
+            or (result.stdout or "").strip()
+        )
         raise LabError(
             f"command failed with exit code {result.returncode}: "
             f"{' '.join(command)}"
@@ -168,6 +183,7 @@ def _run_compose_action(
     root: Path,
     runner: Any,
 ) -> OSActionResult:
+    """Execute a Compose operation scoped to one experiment project."""
     result = execute_os_action(
         OSActionRequest(
             platform="docker",
@@ -186,7 +202,10 @@ def _run_compose_action(
     return result
 
 
-def validate_investigation(path: Path, root: Path = ROOT) -> dict[str, Any]:
+def validate_investigation(
+    path: Path,
+    root: Path = ROOT,
+) -> dict[str, Any]:
     source = ensure_inside(root, path, "investigation specification")
     if not source.is_file():
         raise LabError(f"investigation specification is missing: {source}")
@@ -284,7 +303,11 @@ def validate_investigation(path: Path, root: Path = ROOT) -> dict[str, Any]:
         "investigation.apparatus.network.logical_name",
     )
 
-    compose_path = ensure_inside(root, root / compose_file, "Compose definition")
+    compose_path = ensure_inside(
+        root,
+        root / compose_file,
+        "Compose definition",
+    )
     if not compose_path.is_file():
         raise LabError(f"Compose definition is missing: {compose_path}")
 
@@ -328,12 +351,17 @@ def validate_investigation(path: Path, root: Path = ROOT) -> dict[str, Any]:
         require_text(resource["kind"], f"{label}.kind")
 
         if resource_id in seen_resource_ids:
-            raise LabError(f"duplicate investigation resource ID: {resource_id}")
+            raise LabError(
+                f"duplicate investigation resource ID: {resource_id}"
+            )
         seen_resource_ids.add(resource_id)
 
         for optional_text in ("source", "digest", "authorization"):
-            if optional_text in resource and resource[optional_text] is not None:
-                require_text(resource[optional_text], f"{label}.{optional_text}")
+            if resource.get(optional_text) is not None:
+                require_text(
+                    resource[optional_text],
+                    f"{label}.{optional_text}",
+                )
         if "material_id" in resource:
             require_text(resource["material_id"], f"{label}.material_id")
 
@@ -350,7 +378,8 @@ def validate_investigation(path: Path, root: Path = ROOT) -> dict[str, Any]:
         compose_images = {
             service.get("image")
             for service in services.values()
-            if isinstance(service, dict) and isinstance(service.get("image"), str)
+            if isinstance(service, dict)
+            and isinstance(service.get("image"), str)
         } if isinstance(services, dict) else set()
         unused_images = declared_images - compose_images
         if unused_images:
@@ -395,8 +424,12 @@ def validate_investigation(path: Path, root: Path = ROOT) -> dict[str, Any]:
         if "service" in step and step["service"] is not None:
             require_text(step["service"], f"{label}.service")
 
-        if "arguments" in step and not isinstance(step["arguments"], (dict, list)):
-            raise LabError(f"{label}.arguments must be a mapping or list")
+        if "arguments" in step and not isinstance(
+            step["arguments"], (dict, list)
+        ):
+            raise LabError(
+                f"{label}.arguments must be a mapping or list"
+            )
 
     for field in ("observations", "evaluation", "evidence", "safety"):
         require_open_mapping(
@@ -451,7 +484,10 @@ def resolve_resources(
             "id": resource["id"],
             "kind": resource["kind"],
             "status": "declared-not-material-backed",
-            "provenance": resource.get("source", "investigation definition"),
+            "provenance": resource.get(
+                "source",
+                "investigation definition",
+            ),
         }
         if material_id is None:
             resolved.append(result)
@@ -461,14 +497,18 @@ def resolve_resources(
         if material is None:
             raise LabError(f"material is not registered: {material_id}")
         if material["availability"] != "available":
-            raise LabError(f"material is not currently available: {material_id}")
+            raise LabError(
+                f"material is not currently available: {material_id}"
+            )
         if resource["kind"] != material["kind"]:
             raise LabError(
                 f"resource kind {resource['kind']} does not match material "
                 f"{material_id} kind {material['kind']}"
             )
         if "digest" in resource and resource["digest"] != material.get("digest"):
-            raise LabError(f"resource digest does not match material {material_id}")
+            raise LabError(
+                f"resource digest does not match material {material_id}"
+            )
 
         result.update({
             "material_id": material_id,
@@ -558,7 +598,9 @@ def write_plan(
     if not candidate.is_absolute():
         candidate = root_path / candidate
     if candidate.is_symlink():
-        raise LabError(f"construction plan destination must not be a symlink: {candidate}")
+        raise LabError(
+            f"construction plan destination must not be a symlink: {candidate}"
+        )
     destination = candidate.resolve(strict=False)
     try:
         destination.relative_to(root_path)
@@ -567,11 +609,19 @@ def write_plan(
             f"construction plan must remain inside the repository: {output}"
         ) from exc
     if destination == root_path:
-        raise LabError("construction plan cannot replace the repository root")
+        raise LabError(
+            "construction plan cannot replace the repository root"
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    ensure_inside(root_path, destination.parent, "construction plan directory")
+    ensure_inside(
+        root_path,
+        destination.parent,
+        "construction plan directory",
+    )
     if destination.is_symlink():
-        raise LabError(f"construction plan destination must not be a symlink: {destination}")
+        raise LabError(
+            f"construction plan destination must not be a symlink: {destination}"
+        )
     destination.write_text(
         json.dumps(plan, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -615,22 +665,33 @@ def _convert_labels(value: Any, context: str) -> dict[str, str]:
     if isinstance(value, dict):
         converted = {}
         for key, label_value in value.items():
-            if not isinstance(key, str) or not isinstance(label_value, (str, int, float, bool)):
-                raise LabError(f"{context} labels must contain scalar values")
+            if not isinstance(
+                key,
+                str,
+            ) or not isinstance(label_value, (str, int, float, bool)):
+                raise LabError(
+                    f"{context} labels must contain scalar values"
+                )
             converted[key] = str(label_value)
         return converted
 
     if value is None:
         return {}
 
-    raise LabError(f"{context} labels must be a mapping or key=value list")
+    raise LabError(
+        f"{context} labels must be a mapping or key=value list"
+    )
 
 
 def _owned_compose_document(
     compose_file: Path,
     investigation_id: str,
 ) -> dict[str, Any]:
-    """Add immutable lab ownership labels to services and networks."""
+    """Add experiment ownership labels to its services and networks.
+
+    These labels identify experiment resources; they do not label or claim
+    ownership of the shared lab runtime or other lab infrastructure.
+    """
     document = load_yaml(compose_file)
 
     if not isinstance(document, dict):
@@ -640,23 +701,33 @@ def _owned_compose_document(
     networks = document.get("networks")
 
     if not isinstance(services, dict) or not services:
-        raise LabError("Compose definition must declare at least one service")
+        raise LabError(
+            "Compose definition must declare at least one service"
+        )
     if not isinstance(networks, dict) or not networks:
         raise LabError(
             "Compose definition must declare at least one explicit network"
         )
 
-    for section_name, section in (("service", services), ("network", networks)):
+    for section_name, section in (
+        ("service", services),
+        ("network", networks),
+    ):
         for name, item in section.items():
             if not isinstance(item, dict):
-                raise LabError(f"Compose {section_name} {name!r} must be a mapping")
+                raise LabError(
+                    f"Compose {section_name} {name!r} must be a mapping"
+                )
 
             labels = _convert_labels(
                 item.get("labels", {}),
                 f"Compose {section_name} {name!r}",
             )
 
-            if OWNER_LABEL in labels and labels[OWNER_LABEL] != "security-lab":
+            if (
+                OWNER_LABEL in labels
+                and labels[OWNER_LABEL] != "security-lab"
+            ):
                 raise LabError(
                     f"Compose {section_name} {name!r} has conflicting owner label"
                 )
@@ -666,7 +737,8 @@ def _owned_compose_document(
                 and labels[INVESTIGATION_LABEL] != investigation_id
             ):
                 raise LabError(
-                    f"Compose {section_name} {name!r} has conflicting investigation label"
+                    f"Compose {section_name} {name!r} has conflicting "
+                    "investigation label"
                 )
 
             labels[OWNER_LABEL] = "security-lab"
@@ -779,13 +851,107 @@ def _assert_project_owned(
                 root,
                 timeout=20,
             )
-            if inspected.stdout.strip() != f"security-lab|{investigation_id}":
+            if inspected.stdout.strip() != (
+                f"security-lab|{investigation_id}"
+            ):
                 raise LabError(
                     f"refusing disposal: {kind} resource {resource_id} "
                     "is not verified as owned by this investigation"
                 )
 
     return found
+
+
+def _verify_experiment_network(
+    project: str,
+    investigation_id: str,
+    runner: Any,
+    root: Path,
+) -> dict[str, Any]:
+    """Verify the network created for this experiment after Compose preparation.
+
+    This verifies an experiment-owned resource within the existing lab. It
+    neither creates nor provisions the lab infrastructure.
+
+    The network must be discoverable under the expected Compose project and
+    must carry the experiment ownership labels added to its Compose definition.
+    A missing, duplicated, or incorrectly labelled network fails closed.
+    """
+    listed = _run(
+        [
+            "docker",
+            "network",
+            "ls",
+            "-q",
+            "--filter",
+            f"label=com.docker.compose.project={project}",
+        ],
+        runner,
+        root,
+        timeout=20,
+    )
+
+    network_ids = listed.stdout.split()
+
+    if len(network_ids) != 1:
+        raise LabError(
+            "experiment resource preparation did not produce exactly one "
+            "project-owned Docker network: "
+            f"expected 1, found {len(network_ids)}"
+        )
+
+    network_id = network_ids[0]
+
+    inspected = _run(
+        [
+            "docker",
+            "network",
+            "inspect",
+            "--format",
+            (
+                '{{.Name}}|'
+                '{{ index .Labels "com.docker.compose.project" }}|'
+                '{{ index .Labels "io.ithoka.security-lab.owner" }}|'
+                '{{ index .Labels "io.ithoka.security-lab.investigation" }}'
+            ),
+            network_id,
+        ],
+        runner,
+        root,
+        timeout=20,
+    )
+
+    fields = inspected.stdout.strip().split("|")
+    if len(fields) != 4:
+        raise LabError(
+            "cannot verify the prepared experiment network's identity and ownership"
+        )
+
+    network_name, compose_project, owner, owner_investigation = fields
+
+    if compose_project != project:
+        raise LabError(
+            "prepared Docker network has an unexpected Compose project label"
+        )
+
+    if owner != "security-lab" or owner_investigation != investigation_id:
+        raise LabError(
+            "prepared Docker network is not labelled as owned by this experiment"
+        )
+
+    return {
+        "status": PASS,
+        "project": project,
+        "investigation_id": investigation_id,
+        "network_id": network_id,
+        "network_name": network_name,
+        "ownership": {
+            "compose_project": compose_project,
+            OWNER_LABEL: owner,
+            INVESTIGATION_LABEL: owner_investigation,
+        },
+        "verified_utc": utc_now(),
+    }
 
 
 def _run_boundary(
@@ -814,7 +980,10 @@ def _run_boundary(
             PASS
             if passed
             else FAIL
-            if result.status in {OSActionStatus.FAILED, OSActionStatus.TIMED_OUT}
+            if result.status in {
+                OSActionStatus.FAILED,
+                OSActionStatus.TIMED_OUT,
+            }
             else ERROR
         ),
         "execution": result.to_dict(),
@@ -878,18 +1047,17 @@ def _runtime_admit(
     budget: dict[str, Any],
     root: Path,
 ) -> dict[str, Any]:
-    """Reserve resources through Runtime and reject policy identity drift.
+    """Reserve experiment resources through Runtime and reject policy drift.
 
-    The current Runtime admission API resolves a named profile but does not
-    accept arbitrary per-investigation overrides. Therefore, construction only
-    proceeds when the policy admitted by Runtime is identical to the effective
-    investigation policy. A mismatch is not silently accepted.
+    The Runtime admission API resolves a named profile but does not accept
+    arbitrary per-investigation overrides. Construction proceeds only when
+    the policy admitted by Runtime matches the effective experiment policy.
     """
     status = runtime_status(root)
     if status.get("status") != "RUNNING":
         raise LabError(
-            "construction refused: Lab Runtime must be RUNNING before "
-            "investigation admission"
+            "construction refused: the existing Lab Runtime must be RUNNING "
+            "before experiment admission"
         )
 
     record = admit_experiment(
@@ -905,13 +1073,11 @@ def _runtime_admit(
     admitted_identity = record.get("policy_identity")
 
     if admitted_identity != expected_identity:
-        # Admission was recorded, but its policy does not match the policy this
-        # investigation intends to enforce. Release the reservation immediately.
         try:
             release_experiment(investigation_id, root)
         except LabError as release_error:
             raise LabError(
-                "runtime admission policy does not match investigation policy; "
+                "runtime admission policy does not match experiment policy; "
                 "resource release also failed and requires operator review: "
                 f"{release_error}"
             ) from release_error
@@ -931,6 +1097,7 @@ def _prepare_compose_resources(
     root: Path,
     runner: Any,
 ) -> dict[str, Any]:
+    """Create this experiment's Compose resources without starting workloads."""
     result = _run_compose_action(
         "create",
         project,
@@ -941,7 +1108,10 @@ def _prepare_compose_resources(
     return {
         "status": PASS,
         "operation": "prepare_resources",
-        "meaning": "Compose resources were created; workloads have not been started",
+        "meaning": (
+            "Experiment-owned Compose resources were created inside the "
+            "existing lab; workloads have not been started"
+        ),
         "stdout": result.stdout.strip(),
         "command": [result.native_executable, *result.arguments],
         "os_action": result.to_dict(),
@@ -962,7 +1132,9 @@ def _verify_local_images(
 
     for service_name, service in services.items():
         if not isinstance(service, dict):
-            raise LabError(f"Compose service {service_name!r} must be a mapping")
+            raise LabError(
+                f"Compose service {service_name!r} must be a mapping"
+            )
 
         image = service.get("image")
         if not isinstance(image, str) or not image.strip():
@@ -977,22 +1149,12 @@ def _verify_local_images(
         if registered_images:
             require_available_image(image, root)
 
-        result = runner(
+        _run(
             ["docker", "image", "inspect", image],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            check=False,
+            runner,
+            root,
             timeout=20,
-            shell=False,
         )
-
-        if result.returncode != 0:
-            raise LabError(
-                f"image for service {service_name} is not available locally; "
-                "image acquisition belongs to the separate maintenance workflow: "
-                f"{image}"
-            )
 
 
 def _validate_registered_compose_images(
@@ -1028,12 +1190,9 @@ def _cleanup_failed_construction(
     boundary_apply_attempted: bool,
     admission_created: bool,
 ) -> list[str]:
-    """Attempt conservative cleanup without hiding cleanup failures."""
+    """Clean up this experiment conservatively without hiding failures."""
     errors: list[str] = []
 
-    # Construction does not start workloads before acceptance, but a failed
-    # Compose start may partially start them. Stop first; never assume all are
-    # stopped just because the start command returned an error.
     if runtime_file is not None:
         try:
             _run_compose_action(
@@ -1047,10 +1206,17 @@ def _cleanup_failed_construction(
             errors.append(f"workload stop failed: {exc}")
 
     if boundary_apply_attempted and policy_file.is_file():
-        removal = _run_boundary("remove", project, policy_file, runner, root)
+        removal = _run_boundary(
+            "remove",
+            project,
+            policy_file,
+            runner,
+            root,
+        )
         if removal["status"] != PASS:
             errors.append(
-                f"boundary cleanup failed: {removal.get('reason') or removal['status']}"
+                "boundary cleanup failed: "
+                f"{removal.get('reason') or removal['status']}"
             )
 
     if runtime_file is not None:
@@ -1063,7 +1229,7 @@ def _cleanup_failed_construction(
                 runner,
             )
         except LabError as exc:
-            errors.append(f"project cleanup failed: {exc}")
+            errors.append(f"experiment resource cleanup failed: {exc}")
 
     if admission_created:
         try:
@@ -1081,7 +1247,10 @@ def construct_investigation(
     root: Path = ROOT,
     runner: Any = subprocess.run,
 ) -> dict[str, Any]:
-    """Prepare, enforce, verify, test, then start one owned investigation.
+    """Construct one experiment inside the existing Lab Runtime.
+
+    This function does not construct the lab. It prepares and manages resources
+    scoped to one investigation.
 
     Workloads are never started before policy application, enforcement
     verification, and acceptance all pass.
@@ -1093,12 +1262,16 @@ def construct_investigation(
 
     if not _runtime_gate_enabled(root):
         raise LabError(
-            "runtime construction requires REQUIRE_RUNTIME_APPROVAL=true "
+            "experiment construction requires REQUIRE_RUNTIME_APPROVAL=true "
             "in config/lab.env and the current shell"
         )
 
     specification = validate_investigation(specification_path, root)
-    plan = build_construction_plan(specification_path, investigation_id, root)
+    plan = build_construction_plan(
+        specification_path,
+        investigation_id,
+        root,
+    )
 
     if not plan["network_policy_supported"]:
         raise LabError(
@@ -1110,8 +1283,8 @@ def construct_investigation(
     policy_identity = plan["policy_definition"]["identity"]
     budget = specification["resource_budget"]
 
-    # Revalidate immediately before side effects. This is policy definition,
-    # not enforcement evidence.
+    # Revalidate immediately before experiment side effects. This checks
+    # policy support; it does not constitute enforcement evidence.
     validate_runtime_support(policy)
 
     compose_file = ensure_inside(
@@ -1132,8 +1305,6 @@ def construct_investigation(
     _verify_local_images(raw_compose, runner, root)
     _assert_project_absent(project, runner, root)
 
-    # Runtime admission reserves declared capacity. Admission must be for the
-    # exact same policy identity as the investigation.
     admission = _runtime_admit(
         investigation_id,
         policy,
@@ -1154,28 +1325,28 @@ def construct_investigation(
 
     if policy_file.exists():
         try:
-            existing = json.loads(policy_file.read_text(encoding="utf-8"))
+            existing = json.loads(
+                policy_file.read_text(encoding="utf-8")
+            )
         except (OSError, ValueError) as exc:
             try:
                 release_experiment(investigation_id, root)
             finally:
                 raise LabError(
-                    f"existing project policy evidence is unreadable: {policy_file}"
+                    f"existing experiment policy evidence is unreadable: {policy_file}"
                 ) from exc
 
         if _policy_identity(existing) != policy_identity:
             release_experiment(investigation_id, root)
             raise LabError(
-                "refusing to overwrite an existing project policy with a "
-                "different policy identity"
+                "refusing to overwrite existing experiment policy evidence "
+                "with a different policy identity"
             )
 
-        # A project that already has pinned policy evidence is not a fresh
-        # construction target. Do not reuse its state implicitly.
         release_experiment(investigation_id, root)
         raise LabError(
-            "project policy evidence already exists; inspect or dispose the "
-            "previous investigation before reconstructing it"
+            "experiment policy evidence already exists; inspect or dispose "
+            "the previous experiment before reconstructing it"
         )
 
     evidence: dict[str, Any] = {
@@ -1198,6 +1369,7 @@ def construct_investigation(
             "completed": [],
         },
         "resource_preparation": {"status": NOT_TESTED},
+        "experiment_network": {"status": NOT_TESTED},
         "enforcement": {"status": NOT_TESTED},
         "acceptance": {"status": NOT_TESTED},
         "workloads": {"status": NOT_TESTED},
@@ -1208,11 +1380,10 @@ def construct_investigation(
     preserve_policy_file = False
 
     try:
-        # Record the exact effective policy before applying controls. Runtime
-        # reads this file to bind fresh acceptance evidence to policy identity.
         _write_json(policy_file, policy)
 
-        # Lifecycle stage 1: prepare resources, without starting workloads.
+        # Prepare only resources owned by this experiment. The lab runtime
+        # must already be running; this operation does not provision the lab.
         effective_compose = _owned_compose_document(
             compose_file,
             investigation_id,
@@ -1238,8 +1409,22 @@ def construct_investigation(
         evidence["lifecycle"]["completed"].append("prepare_resources")
         _write_construction_evidence(root, project, evidence)
 
-        # Lifecycle stage 2: apply policy. Mark attempted before invoking the
-        # script because a failed command may have partially changed controls.
+        # Verify that resource preparation actually created the expected
+        # experiment network before applying any experiment network policy.
+        experiment_network = _verify_experiment_network(
+            project,
+            investigation_id,
+            runner,
+            root,
+        )
+        evidence["experiment_network"] = experiment_network
+        evidence["lifecycle"]["completed"].append(
+            "verify_experiment_network"
+        )
+        _write_construction_evidence(root, project, evidence)
+
+        # Mark attempted before invoking the script because a failed command
+        # may have partially changed controls.
         boundary_apply_attempted = True
         apply_result = _run_boundary(
             "apply",
@@ -1253,9 +1438,6 @@ def construct_investigation(
         evidence["lifecycle"]["completed"].append("apply_policy")
         _write_construction_evidence(root, project, evidence)
 
-        # Lifecycle stage 3: verify the controls. A successful apply command
-        # does not prove that the intended rules are present and correctly
-        # ordered.
         verify_result = _run_boundary(
             "verify",
             project,
@@ -1269,9 +1451,7 @@ def construct_investigation(
         evidence["lifecycle"]["completed"].append("verify_enforcement")
         _write_construction_evidence(root, project, evidence)
 
-        # Lifecycle stage 4: execute fresh acceptance probes for the pinned
-        # policy. This checks the policy identity and owned network and runs
-        # the policy's declared acceptance tests.
+        # Execute fresh acceptance probes for the pinned experiment policy.
         readiness = _network_readiness(root, policy)
 
         acceptance = readiness.get("acceptance", {})
@@ -1279,7 +1459,8 @@ def construct_investigation(
 
         if readiness.get("controls_applied") != PASS:
             evidence["enforcement"]["status"] = readiness.get(
-                "controls_applied", FAIL
+                "controls_applied",
+                FAIL,
             )
             evidence["enforcement"]["reason"] = readiness.get("reason")
             _write_construction_evidence(root, project, evidence)
@@ -1309,11 +1490,10 @@ def construct_investigation(
         evidence["lifecycle"]["completed"].append("execute_acceptance")
         _write_construction_evidence(root, project, evidence)
 
-        # Recheck policy support immediately before starting workloads. This
-        # does not replace the enforcement and acceptance results above.
+        # Recheck support before starting workloads. This does not replace
+        # the enforcement and acceptance results above.
         validate_runtime_support(policy)
 
-        # Lifecycle stage 5: start workloads only after all prior gates pass.
         started = _run_compose_action(
             "start",
             project,
@@ -1374,6 +1554,7 @@ def construct_investigation(
                 "policy_identity": policy_identity,
                 "runtime_admission": admission,
                 "resource_preparation": evidence["resource_preparation"],
+                "experiment_network": evidence["experiment_network"],
                 "enforcement": evidence["enforcement"],
                 "acceptance": evidence["acceptance"],
                 "workloads": evidence["workloads"],
@@ -1428,7 +1609,7 @@ def construct_investigation(
             _record_boundary_failure(
                 root,
                 project,
-                "could not persist construction failure evidence",
+                "could not persist experiment construction failure evidence",
                 stage="evidence_persistence",
                 status=ERROR,
             )
@@ -1449,8 +1630,6 @@ def construct_investigation(
             runtime_file.unlink(missing_ok=True)
 
         if not preserve_policy_file:
-            # Keep policy evidence if enforcement removal failed; it is needed
-            # for operator inspection and recovery.
             failure_record = evidence.get("cleanup", {})
             cleanup_failed = failure_record.get("status") == FAIL
             if not cleanup_failed:
@@ -1463,7 +1642,7 @@ def dispose_investigation(
     root: Path = ROOT,
     runner: Any = subprocess.run,
 ) -> None:
-    """Dispose only resources verified as belonging to this investigation."""
+    """Dispose only resources verified as belonging to this experiment."""
     project = _project_name(investigation_id)
 
     specification = validate_investigation(specification_path, root)
@@ -1491,7 +1670,10 @@ def dispose_investigation(
     runtime_file: Path | None = None
 
     try:
-        effective = _owned_compose_document(compose_file, investigation_id)
+        effective = _owned_compose_document(
+            compose_file,
+            investigation_id,
+        )
 
         with tempfile.NamedTemporaryFile(
             "w",
@@ -1506,7 +1688,8 @@ def dispose_investigation(
 
         if temporary_policy_file:
             network_settings = specification["apparatus"].get(
-                "network_policy", {}
+                "network_policy",
+                {},
             )
             policy = resolve_network_policy(
                 root,
@@ -1515,7 +1698,6 @@ def dispose_investigation(
             )
             _write_json(policy_file, policy)
 
-        # Stop workloads before removing their network boundary.
         try:
             _run_compose_action(
                 "stop",
@@ -1526,7 +1708,7 @@ def dispose_investigation(
             )
         except LabError as exc:
             raise LabError(
-                f"disposal refused: could not stop owned workloads: {exc}"
+                f"disposal refused: could not stop owned experiment workloads: {exc}"
             ) from exc
 
         removal = _run_boundary(
@@ -1567,12 +1749,10 @@ def dispose_investigation(
         try:
             release_experiment(investigation_id, root)
         except LabError:
-            # The project has been disposed, but the persistent runtime record
-            # may require manual review. Do not hide the inconsistency.
             _record_boundary_failure(
                 root,
                 project,
-                "project disposed but runtime admission could not be released",
+                "experiment disposed but runtime admission could not be released",
                 stage="runtime_release",
                 status=ERROR,
             )

@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
@@ -8,8 +9,8 @@ STATE_DIR="$ROOT/state/network-boundary"
 OWNER="security-lab"
 PROJECT_RE='^sec-lab-i-[a-z0-9][a-z0-9-]{0,31}$'
 
-# This adapter enforces only the explicitly supported Linux/WSL boundaries.
-# All other boundaries are checked and rejected if enabled.
+# This script owns only the Linux/WSL firewall enforcement path.
+# Other canonical boundaries must be enforced by their owning adapters.
 SUPPORTED_BOUNDARIES=(
     lab_ingress
     lab_egress
@@ -18,14 +19,11 @@ SUPPORTED_BOUNDARIES=(
     ipv6
 )
 
-UNSUPPORTED_BOUNDARIES=(
+OUT_OF_SCOPE_BOUNDARIES=(
     windows_host
     dns
     proxies
     capture
-)
-
-CONFIGURATION_VALIDATED_BOUNDARIES=(
     docker_networks
     filesystem
     resource_access
@@ -63,16 +61,9 @@ case "$ACTION" in
     *) fail "unsupported action: $ACTION" ;;
 esac
 
-need docker
-need sudo
-need iptables
-need ip6tables
-need sha256sum
-need python3
-need ip
-need grep
-need sed
-need cut
+for command_name in docker sudo iptables ip6tables sha256sum python3 ip grep sed cut wc tr; do
+    need "$command_name"
+done
 
 STATE_DIR="$ROOT/state/network-boundary"
 state_file="$STATE_DIR/$PROJECT.env"
@@ -87,7 +78,6 @@ EXT_CHAIN6="SLX${project_suffix}E6"
 
 POLICY_SHA256="$(sha256sum "$POLICY_FILE" | cut -d ' ' -f 1)"
 
-# Values populated by network_details or load_saved_state.
 NETWORK_ID=""
 BRIDGE=""
 SUBNETS=""
@@ -95,81 +85,15 @@ PROJECT_SAVED=""
 STATE_POLICY_SHA256=""
 
 # ---------------------------------------------------------------------------
-# Policy parsing and validation
+# Policy schema and adapter contract
 #
-# The policy definition is not enforcement evidence.
-# This script validates the definition, applies supported controls, and
-# verifies the installed firewall rules. Independent runtime acceptance
-# evidence is produced and checked elsewhere.
+# Presence and validity of a policy definition are not proof of enforcement.
+# This adapter validates the complete canonical boundary set, then enforces
+# only the five boundaries owned by this Linux/WSL adapter.
+#
+# The coordinator must separately require verified enforcement coverage from
+# every other adapter before allowing an investigation to start.
 # ---------------------------------------------------------------------------
-
-policy_value() {
-    local boundary="$1"
-    local key="$2"
-
-    python3 - "$POLICY_FILE" "$boundary" "$key" <<'PY'
-import json
-import sys
-
-try:
-    with open(sys.argv[1], encoding="utf-8") as stream:
-        policy = json.load(stream)
-
-    value = policy["boundaries"][sys.argv[2]][sys.argv[3]]
-
-    if isinstance(value, bool):
-        print("true" if value else "false")
-    elif isinstance(value, (str, int, float)):
-        print(value)
-    else:
-        print(json.dumps(value, sort_keys=True))
-except (OSError, ValueError, KeyError, TypeError) as exc:
-    print(f"invalid policy field: {exc}", file=sys.stderr)
-    raise SystemExit(2)
-PY
-}
-
-policy_has_verification() {
-    python3 - "$POLICY_FILE" "$1" "$2" <<'PY'
-import json
-import sys
-
-try:
-    with open(sys.argv[1], encoding="utf-8") as stream:
-        policy = json.load(stream)
-
-    verification = policy["boundaries"][sys.argv[2]]["verification"]
-    if not isinstance(verification, list):
-        raise ValueError("verification must be a list")
-
-    raise SystemExit(0 if sys.argv[3] in verification else 1)
-except (OSError, ValueError, KeyError, TypeError) as exc:
-    print(f"invalid verification policy: {exc}", file=sys.stderr)
-    raise SystemExit(2)
-PY
-}
-
-policy_verification_is() {
-    python3 - "$POLICY_FILE" "$1" "${@:2}" <<'PY'
-import json
-import sys
-
-try:
-    with open(sys.argv[1], encoding="utf-8") as stream:
-        policy = json.load(stream)
-
-    actual = policy["boundaries"][sys.argv[2]]["verification"]
-    if not isinstance(actual, list) or not all(
-        isinstance(item, str) for item in actual
-    ):
-        raise ValueError("verification must be a list of strings")
-
-    raise SystemExit(0 if set(actual) == set(sys.argv[3:]) else 1)
-except (OSError, ValueError, KeyError, TypeError) as exc:
-    print(f"invalid verification policy: {exc}", file=sys.stderr)
-    raise SystemExit(2)
-PY
-}
 
 validate_policy_document() {
     python3 - "$POLICY_FILE" <<'PY'
@@ -184,20 +108,17 @@ SUPPORTED = {
     "ipv6",
 }
 
-UNSUPPORTED = {
+OUT_OF_SCOPE = {
     "windows_host",
     "dns",
     "proxies",
     "capture",
-}
-
-CONFIGURATION_VALIDATED = {
     "docker_networks",
     "filesystem",
     "resource_access",
 }
 
-EXPECTED = SUPPORTED | UNSUPPORTED | CONFIGURATION_VALIDATED
+EXPECTED = SUPPORTED | OUT_OF_SCOPE
 
 try:
     with open(sys.argv[1], encoding="utf-8") as stream:
@@ -217,54 +138,47 @@ try:
             + ", ".join(sorted(missing))
         )
 
+    # Reject unknown boundary names. Silent omission would make the
+    # canonical policy ambiguous and could bypass coordinator coverage checks.
+    unknown = set(boundaries) - EXPECTED
+    if unknown:
+        raise ValueError(
+            "policy contains unknown boundaries: "
+            + ", ".join(sorted(unknown))
+        )
+
     for name in sorted(EXPECTED):
         boundary = boundaries[name]
 
         if not isinstance(boundary, dict):
             raise ValueError(f"{name} must be an object")
 
-        enabled = boundary.get("enabled")
-        if not isinstance(enabled, bool):
+        if not isinstance(boundary.get("enabled"), bool):
             raise ValueError(f"{name}.enabled must be a boolean")
 
-        for field in ("mode", "scope", "adapter", "rules", "exceptions",
-                      "verification"):
+        for field in (
+            "mode", "scope", "adapter", "rules",
+            "exceptions", "verification"
+        ):
             if field not in boundary:
                 raise ValueError(f"{name}.{field} is missing")
 
-        if not isinstance(boundary["mode"], str):
-            raise ValueError(f"{name}.mode must be a string")
-        if not isinstance(boundary["scope"], str):
-            raise ValueError(f"{name}.scope must be a string")
-        if not isinstance(boundary["adapter"], str):
-            raise ValueError(f"{name}.adapter must be a string")
-        if not isinstance(boundary["rules"], list):
-            raise ValueError(f"{name}.rules must be a list")
-        if not isinstance(boundary["exceptions"], list):
-            raise ValueError(f"{name}.exceptions must be a list")
-        if not isinstance(boundary["verification"], list):
-            raise ValueError(f"{name}.verification must be a list")
+        for field in ("mode", "scope", "adapter"):
+            if not isinstance(boundary[field], str):
+                raise ValueError(f"{name}.{field} must be a string")
 
-        if not all(isinstance(item, str) for item in boundary["verification"]):
-            raise ValueError(f"{name}.verification must contain strings")
+        for field in ("rules", "exceptions", "verification"):
+            if not isinstance(boundary[field], list):
+                raise ValueError(f"{name}.{field} must be a list")
 
-    enabled_unsupported = sorted(
-        name for name in UNSUPPORTED if boundaries[name]["enabled"]
-    )
-    if enabled_unsupported:
-        raise ValueError(
-            "enabled boundaries are unsupported by the Linux/WSL adapter: "
-            + ", ".join(enabled_unsupported)
-        )
+        for field in ("rules", "exceptions", "verification"):
+            if not all(isinstance(item, str) for item in boundary[field]):
+                raise ValueError(
+                    f"{name}.{field} must contain only strings"
+                )
 
-    for name in CONFIGURATION_VALIDATED:
-        boundary = boundaries[name]
-        if boundary["enabled"] and boundary["mode"] != "deny":
-            raise ValueError(f"{name} must remain in deny mode")
-        if boundary["enabled"] and boundary["adapter"] != "docker-compose":
-            raise ValueError(f"{name} requires adapter=docker-compose")
-
-    # This adapter intentionally implements a strict deny-only profile.
+    # This adapter deliberately implements a strict deny-only contract.
+    # It must not silently accept custom firewall rules or exceptions.
     for name in SUPPORTED:
         boundary = boundaries[name]
 
@@ -272,20 +186,24 @@ try:
             raise ValueError(
                 f"{name} must be enabled for this enforcement adapter"
             )
+
         if boundary["mode"] != "deny":
             raise ValueError(
                 f"{name} must use mode=deny; got {boundary['mode']!r}"
             )
+
         if boundary["adapter"] != "linux-wsl":
             raise ValueError(
                 f"{name} requires adapter=linux-wsl; "
                 f"got {boundary['adapter']!r}"
             )
-        if boundary["rules"] != []:
+
+        if boundary["rules"]:
             raise ValueError(
                 f"{name} custom rules are not supported by this adapter"
             )
-        if boundary["exceptions"] != []:
+
+        if boundary["exceptions"]:
             raise ValueError(
                 f"{name} exceptions are not supported by this adapter"
             )
@@ -306,40 +224,53 @@ try:
         "external_networks": {"forwarding_rules", "runtime_acceptance"},
     }
 
-    for name, scope in expected_scopes.items():
-        actual = boundaries[name]["scope"]
-        if actual != scope:
+    for name, expected_scope in expected_scopes.items():
+        actual_scope = boundaries[name]["scope"]
+        if actual_scope != expected_scope:
             raise ValueError(
-                f"{name}.scope must be {scope!r}; got {actual!r}"
+                f"{name}.scope must be {expected_scope!r}; "
+                f"got {actual_scope!r}"
             )
 
-    for name, expected in expected_verification.items():
+    for name, required in expected_verification.items():
         actual = boundaries[name]["verification"]
         actual_set = set(actual)
-        unsupported = actual_set - expected - {"runtime_acceptance"}
-        if (
-            not expected.issubset(actual_set)
-            or unsupported
-            or len(actual) != len(actual_set)
-        ):
+
+        if len(actual) != len(actual_set):
             raise ValueError(
-                f"{name}.verification does not match the adapter contract: "
-                f"required={sorted(expected)!r}, got={actual!r}"
+                f"{name}.verification contains duplicate entries"
             )
 
+        if not required.issubset(actual_set):
+            raise ValueError(
+                f"{name}.verification must include "
+                f"{sorted(required)!r}; got {actual!r}"
+            )
+
+        allowed = required | {"runtime_acceptance"}
+        unexpected = actual_set - allowed
+        if unexpected:
+            raise ValueError(
+                f"{name}.verification contains unsupported requirements: "
+                f"{sorted(unexpected)!r}"
+            )
+
+    # Out-of-scope boundaries are validated structurally but are not
+    # enforced by this script. Enabled ones remain the coordinator's
+    # responsibility; this script does not certify them as enforced.
     print("Policy schema: VALID")
-    print("Supported policy boundaries: " + ", ".join(sorted(SUPPORTED)))
-    print("Unsupported boundaries: disabled")
+    print("Linux/WSL enforcement boundaries: " + ", ".join(sorted(SUPPORTED)))
+    print("Other boundaries: OUT_OF_SCOPE_FOR_THIS_ADAPTER")
 
 except (OSError, ValueError, KeyError, TypeError) as exc:
-    print(f"FAIL: invalid or unsupported network policy: {exc}", file=sys.stderr)
+    print(f"FAIL: invalid network policy: {exc}", file=sys.stderr)
     raise SystemExit(1)
 PY
 }
 
-require_supported_policy() {
+require_valid_policy() {
     validate_policy_document >/dev/null ||
-        fail "policy definition is invalid or requests unsupported enforcement"
+        fail "policy definition is invalid for the Linux/WSL adapter"
 }
 
 # ---------------------------------------------------------------------------
@@ -554,10 +485,7 @@ except (ValueError, KeyError, TypeError, OSError) as exc:
 }
 
 # ---------------------------------------------------------------------------
-# State persistence
-#
-# The file is data, never sourced as shell code.
-# It binds the firewall state to project, network, bridge, subnets and policy.
+# State persistence. The file is parsed as data, never sourced as shell.
 # ---------------------------------------------------------------------------
 
 load_saved_state() {
@@ -580,6 +508,7 @@ try:
                 continue
             if "=" not in line:
                 raise ValueError("malformed state line")
+
             key, value = line.split("=", 1)
             if key not in required:
                 raise ValueError(f"unknown state key: {key}")
@@ -645,25 +574,8 @@ save_state() {
         fail "cannot commit boundary state"
 }
 
-check_current_identity_matches_state() {
-    local current_network_id="$NETWORK_ID"
-    local current_bridge="$BRIDGE"
-    local current_subnets="$SUBNETS"
-
-    load_saved_state
-
-    [[ "$current_network_id" == "$NETWORK_ID" ]] ||
-        fail "project network identity changed"
-
-    [[ "$current_bridge" == "$BRIDGE" ]] ||
-        fail "project bridge identity changed"
-
-    [[ "$current_subnets" == "$SUBNETS" ]] ||
-        fail "project subnet identity changed"
-}
-
 # ---------------------------------------------------------------------------
-# General owned chains: block host and forwarded paths involving the bridge.
+# General bridge boundary chains
 # ---------------------------------------------------------------------------
 
 ensure_owned_chain() {
@@ -718,7 +630,7 @@ ensure_jump() {
 }
 
 # ---------------------------------------------------------------------------
-# External-network isolation: block forwarding into and out of the lab bridge.
+# External-network isolation
 # ---------------------------------------------------------------------------
 
 ensure_external_chain() {
@@ -834,7 +746,7 @@ verify_external_rules() {
 
     check_jump_order iptables FORWARD "$EXT_CHAIN4" \
         "${comment_base}-external-v4-forward-jump" ||
-        fail "IPv4 external-boundary FORWARD jump is missing, duplicated, or incorrectly ordered"
+        fail "IPv4 external-boundary FORWARD jump is missing or incorrectly ordered"
 
     verify_external_chain ip6tables "$EXT_CHAIN6" "$BRIDGE" \
         "${comment_base}-external-v6-out" \
@@ -843,45 +755,36 @@ verify_external_rules() {
 
     check_jump_order ip6tables FORWARD "$EXT_CHAIN6" \
         "${comment_base}-external-v6-forward-jump" ||
-        fail "IPv6 external-boundary FORWARD jump is missing, duplicated, or incorrectly ordered"
+        fail "IPv6 external-boundary FORWARD jump is missing or incorrectly ordered"
 }
 
 # ---------------------------------------------------------------------------
-# Apply and verify supported IPv4/IPv6 rules
+# Apply and verify the general IPv4/IPv6 bridge rules
 # ---------------------------------------------------------------------------
 
 apply_rules() {
     ensure_owned_chain iptables "$CHAIN4" \
-        "${comment_base}-v4-in" \
-        "${comment_base}-v4-out" \
-        "$BRIDGE"
+        "${comment_base}-v4-in" "${comment_base}-v4-out" "$BRIDGE"
 
-    ensure_jump iptables INPUT "$CHAIN4" \
-        "${comment_base}-v4-input-jump"
-    ensure_jump iptables OUTPUT "$CHAIN4" \
-        "${comment_base}-v4-output-jump"
-    ensure_jump iptables FORWARD "$CHAIN4" \
-        "${comment_base}-v4-forward-jump"
+    ensure_jump iptables INPUT "$CHAIN4" "${comment_base}-v4-input-jump"
+    ensure_jump iptables OUTPUT "$CHAIN4" "${comment_base}-v4-output-jump"
+    ensure_jump iptables FORWARD "$CHAIN4" "${comment_base}-v4-forward-jump"
 
     ensure_owned_chain ip6tables "$CHAIN6" \
-        "${comment_base}-v6-in" \
-        "${comment_base}-v6-out" \
-        "$BRIDGE"
+        "${comment_base}-v6-in" "${comment_base}-v6-out" "$BRIDGE"
 
-    ensure_jump ip6tables INPUT "$CHAIN6" \
-        "${comment_base}-v6-input-jump"
-    ensure_jump ip6tables OUTPUT "$CHAIN6" \
-        "${comment_base}-v6-output-jump"
-    ensure_jump ip6tables FORWARD "$CHAIN6" \
-        "${comment_base}-v6-forward-jump"
+    ensure_jump ip6tables INPUT "$CHAIN6" "${comment_base}-v6-input-jump"
+    ensure_jump ip6tables OUTPUT "$CHAIN6" "${comment_base}-v6-output-jump"
+    ensure_jump ip6tables FORWARD "$CHAIN6" "${comment_base}-v6-forward-jump"
 
-    # The external forwarding jump must precede the general bridge jump.
+    # External forwarding controls must be checked before the general
+    # forwarding controls so their position is deterministic.
     apply_external_rules
 }
 
 verify_general_chain() {
-    local tool="$1" chain="$2" bridge="$3"
-    local family="$4" rules expected
+    local tool="$1" chain="$2" bridge="$3" family="$4"
+    local rules expected
 
     rules="$(root_cmd "$tool" -S "$chain")" ||
         fail "$family owned enforcement chain is missing"
@@ -931,10 +834,7 @@ verify_rules() {
 }
 
 # ---------------------------------------------------------------------------
-# Conservative cleanup
-#
-# Validate all owned chains and references before deleting any of them.
-# Unknown rules or unowned references cause cleanup to stop.
+# Conservative cleanup validation
 # ---------------------------------------------------------------------------
 
 validate_general_chain_for_removal() {
@@ -1021,20 +921,17 @@ remove_general_rules() {
 
     if root_cmd "$tool" -S "$chain" >/dev/null 2>&1; then
         root_cmd "$tool" -D "$chain" \
-            -i "$BRIDGE" \
-            -m comment --comment "${comment_base}-${family}-in" \
-            -j DROP ||
+            -i "$BRIDGE" -m comment \
+            --comment "${comment_base}-${family}-in" -j DROP ||
             fail "could not remove owned ingress rule from $chain"
 
         root_cmd "$tool" -D "$chain" \
-            -o "$BRIDGE" \
-            -m comment --comment "${comment_base}-${family}-out" \
-            -j DROP ||
+            -o "$BRIDGE" -m comment \
+            --comment "${comment_base}-${family}-out" -j DROP ||
             fail "could not remove owned egress rule from $chain"
 
         root_cmd "$tool" -D "$chain" \
-            -m comment --comment "${comment_base}-return" \
-            -j RETURN ||
+            -m comment --comment "${comment_base}-return" -j RETURN ||
             fail "could not remove owned return rule from $chain"
 
         root_cmd "$tool" -X "$chain" ||
@@ -1108,8 +1005,12 @@ verify_project_rules_removed() {
 
 case "$ACTION" in
     apply)
-        require_supported_policy
+        require_valid_policy
         check_firewall_prerequisites
+
+        SAVED_NETWORK_ID=""
+        SAVED_BRIDGE=""
+        SAVED_SUBNETS=""
 
         if [[ -e "$state_file" || -L "$state_file" ]]; then
             load_saved_state
@@ -1120,7 +1021,7 @@ case "$ACTION" in
 
         network_details
 
-        if [[ -n "${SAVED_NETWORK_ID:-}" ]]; then
+        if [[ -n "$SAVED_NETWORK_ID" ]]; then
             [[ "$NETWORK_ID" == "$SAVED_NETWORK_ID" &&
                "$BRIDGE" == "$SAVED_BRIDGE" &&
                "$SUBNETS" == "$SAVED_SUBNETS" ]] ||
@@ -1132,15 +1033,16 @@ case "$ACTION" in
         verify_rules
 
         printf 'POLICY_DEFINITION=VALIDATED\n'
-        printf 'ENFORCEMENT=APPLIED_AND_VERIFIED\n'
+        printf 'LINUX_WSL_ENFORCEMENT=APPLIED_AND_VERIFIED\n'
         printf 'RUNTIME_ACCEPTANCE=NOT_TESTED\n'
+        printf 'OTHER_BOUNDARIES=NOT_ENFORCED_BY_THIS_SCRIPT\n'
         printf 'POLICY_SHA256=%s\n' "$POLICY_SHA256"
         printf 'PROJECT=%s\nNETWORK_ID=%s\nBRIDGE=%s\n' \
             "$PROJECT" "$NETWORK_ID" "$BRIDGE"
         ;;
 
     verify)
-        require_supported_policy
+        require_valid_policy
         check_firewall_prerequisites
 
         load_saved_state
@@ -1159,13 +1061,13 @@ case "$ACTION" in
         [[ "$SUBNETS" == "$SAVED_SUBNETS" ]] ||
             fail "project subnet identity changed"
 
-        # Reload to compare the saved policy hash after network discovery.
         load_saved_state
         verify_rules
 
         printf 'POLICY_DEFINITION=VALIDATED\n'
-        printf 'ENFORCEMENT=VERIFIED\n'
+        printf 'LINUX_WSL_ENFORCEMENT=VERIFIED\n'
         printf 'RUNTIME_ACCEPTANCE=NOT_TESTED\n'
+        printf 'OTHER_BOUNDARIES=NOT_ENFORCED_BY_THIS_SCRIPT\n'
         printf 'POLICY_SHA256=%s\n' "$POLICY_SHA256"
         printf 'PROJECT=%s\nNETWORK_ID=%s\nBRIDGE=%s\n' \
             "$PROJECT" "$NETWORK_ID" "$BRIDGE"
@@ -1190,7 +1092,7 @@ case "$ACTION" in
         [[ "$SUBNETS" == "$SAVED_SUBNETS" ]] ||
             fail "refusing cleanup after project subnet identity changed"
 
-        # Validate every owned chain before mutating any firewall rules.
+        # Validate every owned chain before changing any firewall rules.
         validate_general_chain_for_removal \
             iptables "$CHAIN4" "$BRIDGE" v4
         validate_general_chain_for_removal \
@@ -1217,7 +1119,7 @@ case "$ACTION" in
             fail "firewall rules removed but boundary state could not be deleted"
 
         printf 'POLICY_DEFINITION=NOT_APPLICABLE\n'
-        printf 'ENFORCEMENT=REMOVED_AND_VERIFIED\n'
+        printf 'LINUX_WSL_ENFORCEMENT=REMOVED_AND_VERIFIED\n'
         printf 'RUNTIME_ACCEPTANCE=NOT_TESTED\n'
         printf 'PROJECT=%s\n' "$PROJECT"
         ;;
